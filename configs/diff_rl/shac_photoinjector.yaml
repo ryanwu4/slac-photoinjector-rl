@@ -1,0 +1,47 @@
+params:
+  diff_env:
+    name: DiffPhotoinjectorEnv
+    episode_length: 64
+    stochastic_env: true
+    action_scale: 0.05
+    distgen_drift_std: 0.0
+  general:
+    seed: 0
+    device: cuda:0
+    render: false
+    train: true
+    logdir: logs/shac
+  config:
+    name: PhotoinjectorSHAC
+    num_actors: 32
+    steps_num: 16
+    max_epochs: 500
+    actor_learning_rate: 5e-4
+    critic_learning_rate: 1e-3
+    lr_schedule: linear
+    gamma: 0.99
+    critic_method: td-lambda
+    lambda: 0.95
+    target_critic_alpha: 0.2
+    obs_rms: true
+    ret_rms: false
+    critic_iterations: 16
+    num_batch: 4
+    truncate_grads: true
+    grad_norm: 1.0
+    rew_scale: 1.0
+    save_interval: 50
+    betas: [0.7, 0.95]
+    player:
+      games_num: 64
+      deterministic: false
+  network:
+    actor: ActorStochasticMLP
+    actor_mlp:
+      units: [128, 128]
+      activation: elu
+    actor_logstd_init: -1.0
+    critic: CriticMLP
+    critic_mlp:
+      units: [128, 128]
+      activation: elu

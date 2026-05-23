@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "photoinjector-rl"
+version = "0.0.1"
+description = "FACET-II photoinjector LHS sweep + surrogate + RL pipeline (Stage 1: data generation)"
+requires-python = ">=3.11"
+dependencies = [
+    "lume-impact",
+    "distgen",
+    "xopt>=2.7",
+    "h5py",
+    "pmd-beamphysics",
+    "numpy",
+    "pandas",
+]
+
+[project.optional-dependencies]
+mpi = ["mpi4py>=4.1"]
+emittance-target = [
+    "torch>=2.0",
+    "lightning>=2.0",
+    "matplotlib>=3.7",
+    "gymnasium>=1.0",
+    "pytest>=8",
+    "stable-baselines3>=2.3",
+    "tensorboard>=2.15",
+    "wandb>=0.17",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

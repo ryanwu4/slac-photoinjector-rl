@@ -1,0 +1,12 @@
+workdir/
+archives/
+processed/
+plots/
+trained/
+lightning_logs/
+dump*.yaml
+__pycache__/
+*.egg-info/
+.venv/
+*.pyc
+logs/

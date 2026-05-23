@@ -1,0 +1,65 @@
+n_particle: 2000
+
+random:
+    type: hammersley
+
+species: electron
+
+start:
+    type: cathode
+    MTE:
+        value: 400
+        units: meV
+        
+total_charge:
+    value: 500
+    units: pC
+
+# xy_dist:
+#     type: file2d
+#     file: 'VCC.jpeg'
+#     max_x:
+#         value: 2.808
+#         units: mm
+#     max_y:
+#         value: 2.808
+#         units: mm
+#     min_x:
+#         value: -2.808
+#         units: mm
+#     min_y:
+#         value: -2.808
+#         units: mm
+    
+          
+r_dist:
+    type: radial_gaussian #radial_uniform
+    # For radial_gaussian, allowed params: ['sigma_xy', 'truncation_fraction', 'truncation_radius_left', 'truncation_radius_right', 'n_sigma_cutoff_left', 'n_sigma_cutoff_left', 'n_sigma_cutoff', 'truncation_radius', 'truncation_radius_left', 'truncation_radius_right', 'verbose', 'type', 'indent']
+    sigma_xy:
+        value: 1.7
+        units: mm
+    truncation_radius:
+        value: 2.7
+        units: mm
+
+transforms:
+    order: [s1,r1]
+    s1:
+        scale: 2
+        fix_average: true
+        type: scale x
+    r1: 
+        angle:
+            units: degree
+            value: 45.0
+        type: rotate2d x:y
+        
+t_dist:
+  type: gaussian
+  avg_t:
+    units: ps
+    value: 0
+  sigma_t:
+    units: ps
+    value: 1.17 #0.9341825902335456 #2.2/2.355
+  n_sigma_cutoff: 3

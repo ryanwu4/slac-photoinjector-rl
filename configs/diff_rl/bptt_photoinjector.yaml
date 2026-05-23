@@ -1,0 +1,36 @@
+params:
+  diff_env:
+    name: DiffPhotoinjectorEnv
+    episode_length: 64
+    stochastic_env: true
+    action_scale: 0.05
+    distgen_drift_std: 0.0
+  general:
+    seed: 0
+    device: cuda:0
+    render: false
+    train: true
+    logdir: logs/bptt
+  config:
+    name: PhotoinjectorBPTT
+    num_actors: 32
+    steps_num: 64           # full-episode BPTT
+    max_epochs: 200
+    actor_learning_rate: 5e-4
+    lr_schedule: linear
+    gamma: 0.99
+    obs_rms: true
+    truncate_grads: true
+    grad_norm: 1.0
+    rew_scale: 1.0
+    save_interval: 50
+    betas: [0.7, 0.95]
+    player:
+      games_num: 64
+      deterministic: false
+  network:
+    actor: ActorStochasticMLP
+    actor_mlp:
+      units: [128, 128]
+      activation: elu
+    actor_logstd_init: -1.0
