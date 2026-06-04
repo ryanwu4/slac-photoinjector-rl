@@ -122,6 +122,40 @@ def test_reward_spec_minimize_invert_roundtrip() -> None:
     torch.testing.assert_close(back, p, rtol=1e-4, atol=1e-9)
 
 
+def test_aspect_ratio_target_reward() -> None:
+    """aspect_ratio uses a log10 transform; target-mode y_norm is 0 at the target
+    and symmetric for r vs 1/r (a multiplicative ratio)."""
+    fn, transform = PROPERTY_REGISTRY["aspect_ratio"]
+    assert transform == "log10"
+    spec = RewardSpec(name="aspect_ratio", property_fn=fn, transform="log10",
+                      mean=0.0, std=0.36, mode="target", target=1.0)
+    torch.testing.assert_close(spec.normalize(torch.tensor([1.0])),
+                               torch.zeros(1), atol=1e-6, rtol=0)
+    y_off = spec.normalize(torch.tensor([2.0, 0.5]))   # r and 1/r about round
+    assert (y_off > 0).all()
+    torch.testing.assert_close(y_off[0], y_off[1], atol=1e-5, rtol=1e-4)
+
+
+def test_aspect_ratio_target_env_differentiable() -> None:
+    """Full path: FlowBunchEnv(property='aspect_ratio', reward_mode='target') builds
+    from the dataset z-score, steps, and the reward is differentiable wrt the action.
+    Data-gated on the processed dataset (needed for the non-emittance z-score)."""
+    import os
+    import pytest
+    proc = "processed/flow_surrogate.h5"
+    if not os.path.exists(proc):
+        pytest.skip("processed/flow_surrogate.h5 absent")
+    env = FlowBunchEnv(num_envs=4, device=DEV, seed=0, episode_length=4, no_grad=False,
+                       flow=_tiny_flow(), processed_h5=proc, property="aspect_ratio",
+                       reward_mode="target", target=1.5, n_particles=64)
+    env.reset()
+    a = torch.zeros(4, 5, requires_grad=True)
+    _o, r, _d, _i = env.step(a)
+    assert r.shape == (4,) and torch.isfinite(r).all()
+    r.sum().backward()
+    assert a.grad is not None and a.grad.abs().sum() > 0
+
+
 # ----- equivalence with the flow's scalar forward() (4D emittance) ----------
 
 def test_norm_emit_4d_matches_flow_forward() -> None:

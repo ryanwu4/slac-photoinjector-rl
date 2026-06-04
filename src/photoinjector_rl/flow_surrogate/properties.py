@@ -56,6 +56,13 @@ def _sigma_z(parts: torch.Tensor) -> torch.Tensor:
     return parts[:, :, 2].std(dim=1, unbiased=False)
 
 
+def _aspect_ratio(parts: torch.Tensor) -> torch.Tensor:
+    """Projected transverse aspect ratio sigma_x / sigma_y (lab frame)."""
+    sx = parts[:, :, 0].std(dim=1, unbiased=False)
+    sy = parts[:, :, 1].std(dim=1, unbiased=False)
+    return sx / sy.clamp_min(1e-30)
+
+
 def _particle_energy(parts: torch.Tensor) -> torch.Tensor:
     """Per-particle total energy [eV]: sqrt(px^2+py^2+pz^2 + mc^2^2)."""
     p2 = parts[:, :, 3] ** 2 + parts[:, :, 4] ** 2 + parts[:, :, 5] ** 2
@@ -80,6 +87,10 @@ PROPERTY_REGISTRY: dict[str, tuple[Callable[[torch.Tensor], torch.Tensor], str]]
     "sigma_x": (_sigma_x, "log10"),
     "sigma_y": (_sigma_y, "log10"),
     "sigma_z": (_sigma_z, "log10"),
+    # Projected x/y spot-size ratio; log10 so round=1->0 and r vs 1/r are
+    # symmetric (target-mode: |log10(r)-log10(target)|/std). Lever = CQ10121
+    # (normal quad), with SQ10122 (skew) coupling. Intended use: reward-mode target.
+    "aspect_ratio": (_aspect_ratio, "log10"),
     "mean_energy": (_mean_energy, "identity"),
     "energy_spread": (_energy_spread, "log10"),
 }
