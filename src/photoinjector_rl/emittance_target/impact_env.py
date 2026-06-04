@@ -31,11 +31,11 @@ from .env import N_DISTGEN, N_KNOB, PhotoinjectorEnv
 _ALL_LO = np.array([SETTING_BOUNDS[k][0] for k in SETTING_KEYS], dtype=np.float64)
 _ALL_HI = np.array([SETTING_BOUNDS[k][1] for k in SETTING_KEYS], dtype=np.float64)
 
-# Constants pinned by configs/sweep/lhs_train.yaml `vocs.constants`. The xopt
-# sweep that produced the surrogate's training set merged these into every
-# settings dict, so the surrogate effectively learned f(11 knobs | these
-# constants). Reproducing them here keeps the env's transition function in
-# the same fidelity regime as the surrogate -- 2k particles, 8^3 mesh, etc.
+# Fast LOW-fidelity defaults (2k particles, 8^3 mesh) for quick smoke runs and
+# the unit tests. NOTE: the shipped surrogate was trained at HIGH fidelity
+# (20k particles, 32^3 mesh -- see configs/sweep/lhs_train_hifi.yaml). For an
+# Impact-T evaluation at the surrogate's training fidelity, override these
+# (the comparators accept --constants-yaml configs/sweep/lhs_train_hifi.yaml).
 DEFAULT_LHS_CONSTANTS: dict[str, float] = {
     "distgen:total_charge": 500,
     "distgen:n_particle": 2000,
@@ -114,9 +114,10 @@ class ImpactPhotoinjectorEnv(PhotoinjectorEnv):
         self._workdir_root = str(workdir_root) if workdir_root else None
         self._archive_path = str(archive_path) if archive_path else None
         self._marker = marker
-        # Settings that get merged into every Impact-T call. Default reproduces
-        # the lhs_train.yaml `vocs.constants` block so the env matches the
-        # fidelity the surrogate was trained against (2k particles, 8^3 mesh).
+        # Settings that get merged into every Impact-T call. Default is the fast
+        # low-fidelity DEFAULT_LHS_CONSTANTS (2k particles, 8^3 mesh); pass the
+        # hi-fi constants (configs/sweep/lhs_train_hifi.yaml) to match the
+        # surrogate's training fidelity.
         self._constants = dict(DEFAULT_LHS_CONSTANTS if constants is None else constants)
         # Penalty z-score returned by _forward() when Impact-T fails. ~5 sigma
         # above the training-set mean log-emit -> roughly an order of magnitude
@@ -197,10 +198,10 @@ class ImpactPhotoinjectorEnv(PhotoinjectorEnv):
     ) -> "ImpactPhotoinjectorEnv":
         """Build using the SAME normalization stats the surrogate trained
         against, so reward distribution matches the surrogate-trained
-        policy's expectations. The lhs_train.yaml fidelity constants
-        (2k particles, 8^3 mesh, etc.) are applied via the default
-        `constants=DEFAULT_LHS_CONSTANTS` argument unless overridden in
-        kwargs."""
+        policy's expectations. The fast low-fidelity DEFAULT_LHS_CONSTANTS
+        (2k particles, 8^3 mesh) are applied via the default `constants=`
+        argument unless overridden in kwargs; pass the hi-fi constants from
+        configs/sweep/lhs_train_hifi.yaml to match the surrogate's fidelity."""
         with open(norm_json) as f:
             norm = json.load(f)
         return cls(

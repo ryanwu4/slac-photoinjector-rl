@@ -1,6 +1,6 @@
 # emittance_target
 
-First-iteration narrow-scope surrogate. MLP that maps:
+First-iteration narrow-scope surrogate + RL. The surrogate is an MLP that maps:
 
 ```
 input (11-D)  = the 11 XOPT-sampled knobs (5 Impact + 6 distgen)
@@ -19,50 +19,60 @@ multi-output, sequence rollout) get their own sibling subpackages.
 > (R² 0.99→0.95, MAPE 2.5%→6%): the moments are noisy single-realization
 > estimates from 2000 macroparticles, and they add aleatoric noise about a
 > value the settings already encode. The moments code path was removed.
-> See `memory/project_emittance_target_v1.md` for the full story.
+
+This is the **clean** repo: only the code needed to run the full pipeline
+(IMPACT sample generation → surrogate → PPO / SHAC / BPTT) for the **hi-fi**
+dataset. See the top-level `README.md` for the end-to-end walkthrough.
 
 ## Files
 
-| File | Role |
-|---|---|
-| `__init__.py` | Frozen `SETTING_KEYS`, `SETTING_BOUNDS`, `N_INPUT=11`. |
-| `preprocess.py` | Walk `archives/*/*.h5` → single `processed/emittance_target.h5` + `*_norm.json`. Uses `beamphysics.ParticleGroup.norm_emit_4d` for the target. |
-| `plot_distributions.py` | Pre-flight 14-panel grid (11 knobs + 3 emittances). Red dashed lines mark configured LHS bounds. |
-| `dataset.py` | `EmittanceDataset` (in-memory torch Dataset) + `EmittanceDataModule` (Lightning DataModule, 90/10 random split). |
-| `model.py` | `EmittanceMLP` (Lightning module). Default arch: `11 → 128 → 128 → 128 → 1`, GELU, MSE in normalized log-space. MAE in m² logged for human eyes. |
-| `train.py` | End-to-end entry point. EarlyStopping + ModelCheckpoint, post-training pred-vs-true scatter with R² / MAPE. |
-| `env.py` | `PhotoinjectorEnv` — a Gymnasium env that uses the trained MLP as the transition function. 5-D Δknob action space, 6-D obs (5 knobs + z-scored log-emit), 6-D distgen hidden context with optional drift. |
-| `train_sac.py` | Stable-Baselines3 SAC against `PhotoinjectorEnv`. CLI flags for SAC hyperparameters, device selection, W&B logging, and reward shaping. |
-| `callbacks.py` | `RolloutDiagnosticCallback` (multi-seed deterministic rollout plots per eval cadence), `EpisodeMetricsCallback` (per-episode terminal emit / min emit / action magnitude / knob-saturation rate to TB+CSV+W&B). |
-| `policy_scatter.py` | Standalone analysis: runs N rollouts of a trained policy across random distgen seeds, plots terminal emit vs each of the 6 hidden distgen knobs, plus terminal-emit histogram and init-vs-terminal scatter. |
+| File | Role | Status |
+|---|---|---|
+| `__init__.py` | Frozen `SETTING_KEYS`, `SETTING_BOUNDS`, `N_INPUT=11`. | working |
+| `preprocess.py` | Walk `archives/*/*.h5` → single `processed/*.h5` + `*_norm.json`. Uses `beamphysics.ParticleGroup.norm_emit_4d` for the target. | working |
+| `dataset.py` | `EmittanceDataset` (in-memory torch Dataset) + `EmittanceDataModule` (Lightning DataModule, 90/10 random split). | working |
+| `model.py` | `EmittanceMLP` (Lightning module). Default arch `11 → 128 → 128 → 128 → 1`, GELU, MSE in normalized log-space. | working |
+| `train.py` | Surrogate training entry point. EarlyStopping + ModelCheckpoint, post-training pred-vs-true scatter with R² / MAPE. | working |
+| `env.py` | `PhotoinjectorEnv` — Gymnasium env using the trained MLP as the transition fn (for PPO/surrogate). 5-D Δknob action, 6-D obs, 6-D hidden distgen context. | working |
+| `impact_env.py` | `ImpactPhotoinjectorEnv` — same interface as `env.py` but each step runs a real Impact-T sim (for PPO/Impact and SHAC/BPTT Impact-eval). | working |
+| `diff_env.py` | `DiffPhotoinjectorEnv` — batched, torch-only, **differentiable** wrapper around the surrogate. The harness SHAC/BPTT plug into. | working |
+| `callbacks.py` | `RolloutDiagnosticCallback` + `EpisodeMetricsCallback` for the SB3 (PPO) training loop. | working |
+| `train_ppo.py` | PPO (Stable-Baselines3) against the surrogate `PhotoinjectorEnv`. | working |
+| `train_ppo_impact.py` | PPO fine-tune against the real Impact-T env (`ImpactPhotoinjectorEnv`). | working |
+| `train_shac.py` | SHAC driver: wires cfg → `DiffPhotoinjectorEnv` → `diffrl.SHAC`, CSV/TB hooks. | working |
+| `train_bptt.py` | BPTT driver: same, for `diffrl.BPTT`. | working |
+| `diffrl/utils.py` | `seeding`, `RunningMeanStd`, `CriticDataset`, `AverageMeter`, `TimeReport`, `grad_norm`. | working |
+| `diffrl/models.py` | `ActorStochasticMLP`, `ActorDeterministicMLP`, `CriticMLP`. | **OUTLINE — implement by hand** |
+| `diffrl/shac.py` | `SHAC` short-horizon actor-critic. | **OUTLINE — implement by hand** |
+| `diffrl/bptt.py` | `BPTT` full-episode backprop-through-time. | **OUTLINE — implement by hand** |
+| `compare_impact.py`, `compare_n_impact.py`, `compare_impact_all_algos.py` | Evaluate trained policies (PPO `.zip` via `SB3Adapter`, SHAC/BPTT `.pt` via `DiffRLAdapter`) on the real Impact-T env and report paired stats. | working |
+| `compare_diff_algos.py` | Surrogate-side benchmark comparing PPO / SHAC / BPTT across seeds with a shared sample budget. Writes `logs/compare_diff_hifi/`. | working |
+| `plot_curves_poster.py` | Poster-sized re-plot of the env-step / wall-clock learning curves from a `compare_diff_algos` run (reads its CSVs, no retraining). Writes the `poster/` subdir. | working |
+
+> The three **OUTLINE** files ship as signatures + docstrings + `NotImplementedError`.
+> The original NVlabs/DiffRL implementations are stashed (gitignored) under
+> `reference/` at the repo root for self-checking. `diffrl/utils.py`, the
+> differentiable env, the drivers, and the configs are fully working so there is
+> a runnable harness to plug the hand-written algorithm into.
 
 ## Workflow
 
-From repo root, inside the `slac-rl` conda env:
+From repo root, inside the `slac-rl` conda env. The hi-fi surrogate dataset and
+checkpoint ship preserved, so steps 1–2 are only needed to regenerate.
 
 ```bash
-# 1. (one-time-per-sweep) sanity plot — confirm LHS coverage is uniform.
-python -m photoinjector_rl.emittance_target.plot_distributions \
-    --archives 'archives/train/*.h5' \
-    --out plots/emittance_target/distributions.png
-
-# 2. (one-time-per-sweep) preprocess → processed/emittance_target.h5
+# 1. (regenerate-only) preprocess → processed/emittance_target_hifi.h5
 python -m photoinjector_rl.emittance_target.preprocess \
-    --archives 'archives/train/*.h5' \
-    --out processed/emittance_target.h5
+    --archives 'archives/train_hifi/*.h5' \
+    --out processed/emittance_target_hifi.h5
 
-# 3. train
+# 2. (regenerate-only) train surrogate
 python -m photoinjector_rl.emittance_target.train \
-    --processed processed/emittance_target.h5 \
-    --out-dir trained/emittance_target \
-    --max-epochs 200 --batch-size 256
-
-# Outputs:
-#   trained/emittance_target/checkpoints/best-*.ckpt   (best val_loss)
-#   trained/emittance_target/checkpoints/last.ckpt
-#   trained/emittance_target/csv_logs/                 (per-epoch metrics)
-#   trained/emittance_target/val_pred_vs_true.png      (R² + MAPE in title)
-#   trained/emittance_target/final_metrics.json
+    --processed processed/emittance_target_hifi.h5 \
+    --out-dir trained/emittance_target_hifi \
+    --devices 1
+# Outputs: trained/emittance_target_hifi/checkpoints/best-*.ckpt, last.ckpt,
+#          csv_logs/, val_pred_vs_true.png, final_metrics.json
 ```
 
 ## Inference
@@ -71,219 +81,109 @@ python -m photoinjector_rl.emittance_target.train \
 from photoinjector_rl.emittance_target.model import EmittanceMLP
 from photoinjector_rl.emittance_target.dataset import EmittanceDataset
 
-ds = EmittanceDataset("processed/emittance_target.h5")
-model = EmittanceMLP.load_from_checkpoint("trained/emittance_target/checkpoints/best-...ckpt")
+ds = EmittanceDataset("processed/emittance_target_hifi.h5")
+model = EmittanceMLP.load_from_checkpoint(
+    "trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt")
 emit_m2 = model.predict_physical(ds.x[:10])      # -> (10, 1) tensor in m^2
 ```
 
-## Gym environment
+## RL training
 
-For RL training, `env.py` provides a Gymnasium-compatible env that uses the
-trained MLP as the transition function:
+All three algorithms minimize terminal `norm_emit_4d`. Reward is `-log_emit_norm`
+(RL maximizer ⇒ minimizes emittance). The 6-D distgen state is sampled at
+`reset()` and is a hidden context the policy must implicitly adapt to.
 
-```python
-from photoinjector_rl.emittance_target.env import PhotoinjectorEnv
-
-env = PhotoinjectorEnv.from_checkpoint(
-    ckpt_path="trained/emittance_target/checkpoints/best-...ckpt",
-    norm_json="processed/emittance_target_norm.json",
-    max_steps=64,                # episode length
-    action_scale=0.05,           # Δknob per step (5% of full range)
-    distgen_drift_std=0.0,       # >0 enables per-step Gaussian random walk on the hidden distgen state
-)
-
-obs, info = env.reset(seed=0)
-# obs: (6,) = [5 knobs in [0,1], z-scored log-emit]
-# info: {"emit_m2", "log_emit_norm", "distgen_norm", "knobs_phys", "step_count"}
-
-for _ in range(64):
-    action = env.action_space.sample()          # (5,) in [-1, 1]
-    obs, reward, terminated, truncated, info = env.step(action)
-    if truncated:
-        break
-```
-
-Reward is `-log_emit_norm` (RL maximizer ⇒ minimizes emittance). The 6-D
-distgen state is sampled uniformly at `reset()` and is NOT part of the
-observation — it's a hidden context the policy must implicitly adapt to.
-
-## RL training (SAC)
+### PPO (surrogate)
 
 ```bash
-python -m photoinjector_rl.emittance_target.train_sac \
-    --ckpt trained/emittance_target/checkpoints/best-XXX.ckpt \
-    --norm-json processed/emittance_target_norm.json \
-    --out-dir trained/sac_emittance_target \
-    --total-timesteps 100000 \
-    --wandb-project photoinjector-rl
-
-# Smoke (~1k timesteps, ~2 min):
-python -m photoinjector_rl.emittance_target.train_sac \
-    --ckpt ... --norm-json ... --smoke
-
-# Pick a specific GPU (surrogate + SAC nets both move there):
-python -m photoinjector_rl.emittance_target.train_sac \
-    --ckpt ... --norm-json ... --device cuda:1
-# Use --device auto (default) to pick cuda:0 if available else cpu.
-```
-
-### Logging
-
-Pick one of three modes:
-
-| Mode | Flag | What you get | When to use |
-|---|---|---|---|
-| **Weights & Biases** | `--wandb-project NAME` | Cloud dashboard at wandb.ai, viewable from any browser. | SSH'd into a remote box and don't want to port-forward. **Recommended.** |
-| **W&B offline** | `--wandb-project NAME --wandb-mode offline` | Local dir under `<out-dir>/wandb/`. Sync later with `wandb sync wandb/<run>`. | Air-gapped host or no outbound network. |
-| **No UI** | (omit `--wandb-project`) | Plain TB binary + CSV under `<out-dir>/tb/SAC_*/progress.csv`. | `tail -f` the CSV over SSH. |
-
-First-time wandb users: run `wandb login` once, paste the API key from
-https://wandb.ai/authorize. The SAC scalars (rollout/ep_rew_mean, train/actor_loss,
-train/critic_loss, train/ent_coef, eval/mean_reward, etc.) all sync because we
-set `sync_tensorboard=True`.
-
-Outputs land under `--out-dir`:
-- `sac_final.zip` — final SB3 model
-- `eval/best_model.zip` — best-eval-mean-reward checkpoint
-- `tb/` — TensorBoard + CSV logs (mirrored to W&B when enabled).
-  Includes the standard SB3 scalars plus four per-episode metrics:
-  `rollout/terminal_emit_m2`, `rollout/min_emit_m2`,
-  `rollout/action_mean_abs`, `rollout/saturation_rate`.
-- `ckpts/` — periodic save_freq checkpoints
-- `rollouts/` — multi-seed diagnostic PNGs per eval cadence
-  (one trajectory per `--diag-seeds`, default 4 seeds)
-- `wandb/` — W&B run artifacts (only with `--wandb-project`)
-- `wandb_models/` — W&B model snapshots (only with `--wandb-project`)
-
-### Reward shaping
-
-`--terminal-bonus K` adds `K * (-y_norm)` to the final step's reward
-(default 0 = library default per-step reward). Useful when a previous run
-showed the policy learning to "transit through good regions" without
-settling there — bumping K to 5–20 makes the agent care explicitly about
-the endpoint.
-
-### Policy analysis
-
-After training, generate the policy-vs-distgen scatter:
-
-```bash
-python -m photoinjector_rl.emittance_target.policy_scatter \
-    --algo sac \
-    --policy trained/sac_emittance_target/eval/best_model.zip \
-    --ckpt trained/emittance_target/checkpoints/best-XXX.ckpt \
-    --norm-json processed/emittance_target_norm.json \
-    --out plots/policy_scatter.png \
-    --n-samples 200 \
-    --device cuda:0
-```
-
-6 panels of terminal emit vs each hidden distgen knob (color = improvement
-ratio), plus terminal-emit histogram and init-vs-terminal scatter. The raw
-data is also dumped to `plots/policy_scatter.npz` for downstream analysis.
-
-Pass `--algo ppo` instead to analyze a PPO checkpoint.
-
-## PPO baseline (ablation)
-
-On-policy alternative to SAC, useful as a sanity check that the result
-isn't algorithm-specific. PPO is sample-hungrier than SAC but the surrogate
-is cheap, so we make up the gap with parallel workers (`--n-envs 16`).
-Default config = 500k timesteps, ~5x SAC's sample budget.
-
-```bash
-# Smoke (4096 timesteps = one rollout):
 python -m photoinjector_rl.emittance_target.train_ppo \
-    --ckpt trained/emittance_target/checkpoints/best-XXX.ckpt \
-    --norm-json processed/emittance_target_norm.json \
-    --smoke
-
-# Full run:
-python -m photoinjector_rl.emittance_target.train_ppo \
-    --ckpt ... --norm-json ... \
-    --out-dir trained/ppo_v1 \
-    --total-timesteps 500000 \
-    --n-envs 16 \
-    --device cuda:0 \
-    --wandb-project photoinjector-rl
-
-# Compare against SAC v3 using the same policy_scatter script:
-python -m photoinjector_rl.emittance_target.policy_scatter \
-    --algo ppo \
-    --policy trained/ppo_v1/eval/best_model.zip \
-    --ckpt ... --norm-json ... \
-    --out trained/ppo_v1/policy_scatter.png \
-    --n-samples 200 --device cuda:0
+    --ckpt trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt \
+    --norm-json processed/emittance_target_hifi_norm.json \
+    --out-dir trained/ppo_emittance_target \
+    --total-timesteps 500000 --n-envs 16 --device cpu
+# Smoke: add --smoke (one rollout).
 ```
 
-Device handling: `--device` controls PPO's policy/value nets. The surrogate
-inside each SubprocVecEnv worker is always loaded on CPU (sub-ms inference,
-avoids spinning up 16 CUDA contexts for a tiny MLP). **For a small MLP
-policy like ours, SB3 recommends running PPO itself on CPU as well** — the
-batch is too small to amortize GPU transfer overhead. Use `--device cpu`.
+### PPO (Impact fine-tune)
 
-### Fine-tune on Impact-T (warm-start from surrogate policy)
-
-Take the surrogate-trained PPO policy and refine it directly against
-Impact-T. Same action/obs spaces, same z-score, same episode shape —
-only the transition function swaps from the MLP to a real simulator run.
-Budget is small (~2k Impact-T evals total ≈ 45 min wall-clock on 8 CPU
-workers).
+Warm-start the surrogate-trained policy and refine against Impact-T. Same
+action/obs spaces, same z-score, same episode shape — only the transition
+function swaps from the MLP to a real simulator run.
 
 ```bash
-# Smoke (1 PPO update, ~5 min):
 python -m photoinjector_rl.emittance_target.train_ppo_impact \
-    --warm-start trained/ppo_v1/eval/best_model.zip \
+    --warm-start trained/ppo_emittance_target/eval/best_model.zip \
     --impact-config configs/impact/ImpactT_config.yaml \
     --distgen-input configs/impact/distgen_template.yaml \
-    --norm-json processed/emittance_target_norm.json \
-    --smoke
-
-# Full fine-tune:
-python -m photoinjector_rl.emittance_target.train_ppo_impact \
-    --warm-start trained/ppo_v1/eval/best_model.zip \
-    --impact-config configs/impact/ImpactT_config.yaml \
-    --distgen-input configs/impact/distgen_template.yaml \
-    --norm-json processed/emittance_target_norm.json \
+    --norm-json processed/emittance_target_hifi_norm.json \
     --out-dir trained/ppo_impact_v1 \
-    --total-timesteps 2048 \
-    --n-envs 8 \
-    --wandb-project photoinjector-rl
+    --total-timesteps 2048 --n-envs 8
+# Smoke: add --smoke (one PPO update).
 ```
 
-Key design choices (locked 2026-05-14):
+The env catches any Impact-T failure in `_forward()`, returns a ~5σ-worse
+z-score (large negative reward), bumps `info["failure_count"]`, and continues
+so the agent can back off.
 
-- **Same normalization JSON as surrogate.** Reward distribution stays
-  in-distribution, so the loaded value function (trained on the surrogate)
-  remains useful for the fine-tune update.
-- **Conservative hyperparameters.** `--learning-rate 1e-4` (vs 3e-4 from
-  scratch), `--clip-range 0.1` (vs 0.2). We're nudging, not retraining.
-- **No Xopt layer.** The env calls `custom_evaluate_impact_with_distgen`
-  directly. Xopt's value-add is in optimization generators (LHS, CNSGA);
-  we don't need that here — we need episode-structured rollouts, which
-  SubprocVecEnv already gives us.
-- **Failure handling.** Impact-T can numerically fail at extreme knob
-  settings. The env catches any exception in `_forward()`, returns a
-  ~5σ-worse z-score (large negative reward), bumps `info["failure_count"]`,
-  and lets the episode continue so the agent can back off.
+### SHAC / BPTT (differentiable, surrogate)
 
-### Paired comparison (compare_algos)
-
-Run two policies on the *same* distgen seeds and report paired stats:
+These backprop the reward through the frozen surrogate, so they need the
+**differentiable** env (`diff_env.py`). They are surrogate-only by construction
+(Impact-T is not differentiable); evaluate the learned policy on Impact below.
 
 ```bash
-python -m photoinjector_rl.emittance_target.compare_algos \
-    --algo-a sac --policy-a trained/sac_v3/eval/best_model.zip \
-    --algo-b ppo --policy-b trained/ppo_v1/eval/best_model.zip \
-    --ckpt trained/emittance_target/checkpoints/best-XXX.ckpt \
-    --norm-json processed/emittance_target_norm.json \
-    --out trained/compare_sac_vs_ppo.png \
-    --n-samples 200 --device cuda:0
+# Smoke both (few epochs):
+bash scripts/run_diff_smoke.sh --device cpu --epochs 10
+
+# Or directly:
+python -m photoinjector_rl.emittance_target.train_shac \
+    --cfg configs/diff_rl/shac_photoinjector.yaml \
+    --ckpt trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt \
+    --norm-json processed/emittance_target_hifi_norm.json \
+    --logdir logs/shac --device cuda:0
 ```
 
-Outputs a 4-panel PNG (terminal-emit histograms, paired scatter, log-ratio
-histogram, ratio CDFs) and a `.npz` with the full paired data. Prints a
-per-metric table including head-to-head win rate.
+> SHAC/BPTT will raise `NotImplementedError` until you implement `diffrl/shac.py`,
+> `diffrl/bptt.py`, and `diffrl/models.py`.
+
+### Evaluate any trained policy on Impact-T
+
+`compare_n_impact.py` loads PPO (`.zip`) and SHAC/BPTT (`.pt`) policies and rolls
+them out on the real Impact-T env:
+
+```bash
+python -m photoinjector_rl.emittance_target.compare_n_impact \
+    --policy ppo=trained/ppo_emittance_target/eval/best_model.zip \
+    --policy shac=logs/shac/best_policy.pt \
+    --policy bptt=logs/bptt/best_policy.pt \
+    --impact-config configs/impact/ImpactT_config.yaml \
+    --distgen-input configs/impact/distgen_template.yaml \
+    --norm-json processed/emittance_target_hifi_norm.json \
+    --seeds 0,1,2,3
+```
+
+### Surrogate-side benchmark (PPO vs SHAC vs BPTT)
+
+```bash
+python -m photoinjector_rl.emittance_target.compare_diff_algos \
+    --ckpt trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt \
+    --norm-json processed/emittance_target_hifi_norm.json \
+    --out-dir logs/compare_diff_hifi \
+    --algos ppo,shac,bptt --seeds 0,1,2 --budget 500000 --device cuda:0
+
+# poster-sized learning curves -> logs/compare_diff_hifi/poster/
+python -m photoinjector_rl.emittance_target.plot_curves_poster \
+    --in-dir logs/compare_diff_hifi --algos ppo,shac,bptt --seeds 0,1,2
+
+# Impact-T head-to-head of the best-per-algo policies -> logs/compare_impact_hifi/
+python -m photoinjector_rl.emittance_target.compare_impact_all_algos \
+    --compare-dir logs/compare_diff_hifi \
+    --impact-config configs/impact/ImpactT_config.yaml \
+    --distgen-input configs/impact/distgen_template.yaml \
+    --norm-json processed/emittance_target_hifi_norm.json \
+    --out logs/compare_impact_hifi/all_algos \
+    --n-samples 20 --n-workers 8 --max-steps 64
+```
 
 ## Testing
 
@@ -291,11 +191,11 @@ per-metric table including head-to-head win rate.
 pytest tests/ -v
 ```
 
-- Unit tests run without the trained checkpoint (use mock surrogates).
-- Regression tests skip if `trained/emittance_target/checkpoints/best-*.ckpt`
-  or `processed/emittance_target_norm.json` are missing. Their golden values
-  are checkpoint-specific — update via `/tmp/compute_goldens.py` (or any
-  equivalent script) after retraining.
+- Env / harness tests run without the trained checkpoint (mock surrogates) and
+  should pass immediately.
+- `tests/test_diffrl_models.py` is the acceptance spec for your hand-written
+  `diffrl/models.py`; it fails with `NotImplementedError` until implemented.
+- Regression tests that need a checkpoint skip if it is absent.
 
 ## Design choices (locked 2026-05-12)
 
@@ -303,9 +203,9 @@ pytest tests/ -v
   needs a fast, differentiable reward signal. The conditional NF on 6D clouds is
   a bigger infra investment with uncertain payoff. An MLP on scalar emittance
   hits the actual need.
-- **Why `norm_emit_4d` and not `sqrt(eps_x * eps_y)`:** the user picked the
-  openPMD-beamphysics definition explicitly. The geometric-mean variant is also
-  computable from `pg.norm_emit_x` and `pg.norm_emit_y` if needed later.
+- **Why `norm_emit_4d` and not `sqrt(eps_x * eps_y)`:** the openPMD-beamphysics
+  definition was chosen explicitly. The geometric-mean variant is computable from
+  `pg.norm_emit_x` and `pg.norm_emit_y` if needed later.
 - **Why settings-only (no init moments):** see ablation note above.
 - **Why log10 on the target:** emittance is bounded-below by zero and
   right-skewed; log-transforming makes the MSE loss landscape behave.

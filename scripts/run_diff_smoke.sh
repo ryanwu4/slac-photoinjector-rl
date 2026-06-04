@@ -40,8 +40,8 @@ done
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-CKPT="trained/emittance_target/checkpoints/best-epoch=191-val_loss=0.0060.ckpt"
-NORM="processed/emittance_target_norm.json"
+CKPT="trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt"
+NORM="processed/emittance_target_hifi_norm.json"
 PYTHON="${PYTHON:-/home/rwu4/miniconda3/envs/slac-rl/bin/python}"
 
 # Pin to one physical GPU. CUDA_VISIBLE_DEVICES makes torch see only that

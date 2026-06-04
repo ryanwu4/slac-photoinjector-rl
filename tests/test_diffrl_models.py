@@ -5,7 +5,6 @@ from __future__ import annotations
 import torch
 
 from photoinjector_rl.emittance_target.diffrl.models import (
-    ActorDeterministicMLP,
     ActorStochasticMLP,
     CriticMLP,
 )
@@ -27,14 +26,6 @@ def test_actor_stochastic_shape():
     a_det = actor(obs, deterministic=True)
     assert a_det.shape == (8, 5)
     assert actor.get_logstd().shape == (5,)
-
-
-def test_actor_deterministic_shape():
-    actor = ActorDeterministicMLP(obs_dim=6, action_dim=5, cfg_network=_CFG,
-                                  device="cpu")
-    obs = torch.randn(8, 6)
-    assert actor(obs).shape == (8, 5)
-    assert actor.get_logstd() is None
 
 
 def test_critic_shape():

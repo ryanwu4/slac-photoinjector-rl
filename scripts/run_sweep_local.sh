@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CONFIG="${1:-configs/sweep/lhs_smoke.yaml}"
+CONFIG="${1:-configs/sweep/lhs_smoke_hifi.yaml}"
 
 # 1 mpi4py.futures master + 48 workers (matches max_workers: 48 in the sweep YAMLs).
 # Override with MPI_RANKS env var if running on a smaller box.

@@ -1,23 +1,24 @@
 """
-N-way paired comparison of PPO policies on the Impact-T env.
+N-way paired evaluation of trained policies on the real Impact-T env.
 
-Generalization of compare_impact.py to >=2 policies. Useful for 3-way
-ablations like "surrogate-only" vs "impact-from-scratch" vs
-"surrogate-pretrain + impact-fine-tune" -- the second of which answers
-the question of whether the surrogate pretraining is actually load-bearing.
+This is the **Impact-eval** path for the differentiable algorithms: SHAC and
+BPTT train on the differentiable surrogate (Impact-T is not differentiable), and
+their learned policies are then evaluated here against real Impact-T runs.
+Generalization of compare_impact.py to >=2 policies.
 
-Each `--policy LABEL=PATH` argument adds one policy. All policies are
-evaluated on the SAME N seeds (so head-to-head per-seed comparisons are
-meaningful).
+Each `--policy LABEL=PATH` argument adds one policy. The PolicyAdapter dispatches
+by file suffix: `.zip` -> SB3 PPO (`SB3Adapter`); `.pt` -> SHAC/BPTT actor saved
+by `diffrl.{SHAC,BPTT}.save()` (`DiffRLAdapter`). All policies are evaluated on
+the SAME N seeds, so head-to-head per-seed comparisons are meaningful.
 
 Usage:
     python -m photoinjector_rl.emittance_target.compare_n_impact \\
-        --policy surrogate_only=trained/ppo_v1/eval/best_model.zip \\
-        --policy impact_scratch=trained/ppo_impact_v1_BROKEN_scratch/ppo_impact_final.zip \\
-        --policy impact_finetune=trained/ppo_impact_v1/ppo_impact_final.zip \\
+        --policy ppo=trained/ppo_emittance_target/eval/best_model.zip \\
+        --policy shac=logs/shac/best_policy.pt \\
+        --policy bptt=logs/bptt/best_policy.pt \\
         --impact-config configs/impact/ImpactT_config.yaml \\
         --distgen-input configs/impact/distgen_template.yaml \\
-        --norm-json processed/emittance_target_norm.json \\
+        --norm-json processed/emittance_target_hifi_norm.json \\
         --n-samples 30 --n-workers 8 --max-steps 32 \\
         --out trained/compare_three
 """

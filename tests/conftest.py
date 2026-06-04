@@ -19,8 +19,10 @@ import pytest
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CHECKPOINT_GLOB = "trained/emittance_target/checkpoints/best-*.ckpt"
-NORM_JSON_PATH = "processed/emittance_target_norm.json"
+CHECKPOINT_GLOB = "trained/emittance_target_hifi/checkpoints/best-*.ckpt"
+NORM_JSON_PATH = "processed/emittance_target_hifi_norm.json"
+FLOW_CHECKPOINT_GLOB = "trained/flow_surrogate/checkpoints/best-*.ckpt"
+FLOW_NORM_JSON_PATH = "processed/flow_surrogate_norm.json"
 
 
 @pytest.fixture(scope="session")
@@ -63,6 +65,40 @@ def loaded_norm(norm_json_path: Path) -> dict:
     import json
     with open(norm_json_path) as f:
         return json.load(f)
+
+
+# ------------------------------- flow surrogate ------------------------------
+
+
+@pytest.fixture(scope="session")
+def flow_checkpoint_path(repo_root: Path) -> Path:
+    """Path to the trained ConditionalAffineFlow checkpoint, or skip."""
+    matches = sorted(glob.glob(str(repo_root / FLOW_CHECKPOINT_GLOB)))
+    if not matches:
+        pytest.skip(f"no checkpoint matching {FLOW_CHECKPOINT_GLOB} -- "
+                    "train one with `python -m photoinjector_rl.flow_surrogate.train`")
+    return Path(matches[-1])
+
+
+@pytest.fixture(scope="session")
+def flow_norm_json_path(repo_root: Path) -> Path:
+    """Path to the flow's preprocessed normalization JSON, or skip."""
+    p = repo_root / FLOW_NORM_JSON_PATH
+    if not p.exists():
+        pytest.skip(f"missing {FLOW_NORM_JSON_PATH} -- "
+                    "run `python -m photoinjector_rl.flow_surrogate.preprocess`")
+    return p
+
+
+@pytest.fixture(scope="session")
+def loaded_flow(flow_checkpoint_path: Path):
+    """Real ConditionalAffineFlow loaded from disk."""
+    from photoinjector_rl.flow_surrogate.model import ConditionalAffineFlow
+
+    model = ConditionalAffineFlow.load_from_checkpoint(
+        str(flow_checkpoint_path), map_location="cpu")
+    model.eval()
+    return model
 
 
 # ------------------------------- mock surrogates -----------------------------

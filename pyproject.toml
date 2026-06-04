@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "photoinjector-rl"
-version = "0.0.1"
-description = "FACET-II photoinjector LHS sweep + surrogate + RL pipeline (Stage 1: data generation)"
+version = "0.1.0"
+description = "FACET-II photoinjector pipeline: LHS sweep -> surrogate (scalar MLP + conditional flow) -> RL (PPO/SHAC/BPTT, incl. first-order MBRL over flow-computed bunch properties)"
 requires-python = ">=3.11"
 dependencies = [
     "lume-impact",
@@ -19,6 +19,8 @@ dependencies = [
 
 [project.optional-dependencies]
 mpi = ["mpi4py>=4.1"]
+# Surrogate (scalar MLP + conditional affine-coupling flow) + RL stack.
+# The affine flow needs no extra deps beyond torch.
 emittance-target = [
     "torch>=2.0",
     "lightning>=2.0",

@@ -29,7 +29,6 @@ params:
       games_num: 64
       deterministic: false
   network:
-    actor: ActorStochasticMLP
     actor_mlp:
       units: [128, 128]
       activation: elu

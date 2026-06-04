@@ -4,8 +4,8 @@ SHAC training entry point for the photoinjector surrogate env.
 Usage:
     python -m photoinjector_rl.emittance_target.train_shac \
         --cfg configs/diff_rl/shac_photoinjector.yaml \
-        --ckpt trained/emittance_target/checkpoints/best-epoch=191-val_loss=0.0060.ckpt \
-        --norm-json processed/emittance_target_norm.json \
+        --ckpt trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt \
+        --norm-json processed/emittance_target_hifi_norm.json \
         --logdir logs/shac_smoke --seed 0 --max-epochs 2
 
 The YAML mirrors NVlabs/DiffRL's cfg layout. CLI flags can override the

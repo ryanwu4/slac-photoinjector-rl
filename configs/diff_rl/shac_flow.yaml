@@ -1,18 +1,25 @@
+# SHAC over the conditional-flow surrogate (FlowBunchEnv). Network/config blocks
+# are IDENTICAL to shac_photoinjector.yaml so the flow-MBRL run is directly
+# comparable to the v1 scalar-MLP SHAC run. Only diff_env differs: the reward is
+# a property computed from the flow's sampled output bunch.
 params:
   diff_env:
-    name: DiffPhotoinjectorEnv
+    name: FlowBunchEnv
     episode_length: 64
     stochastic_env: true
     action_scale: 0.05
     distgen_drift_std: 0.0
+    property: norm_emit_4d      # registry key; first test = 4D emittance
+    reward_mode: minimize       # minimize | maximize | target
+    n_particles: 512            # MC particles per env-step (variance vs speed)
   general:
     seed: 0
     device: cuda:0
     render: false
     train: true
-    logdir: logs/shac
+    logdir: logs/shac_flow
   config:
-    name: PhotoinjectorSHAC
+    name: PhotoinjectorFlowSHAC
     num_actors: 32
     steps_num: 16
     max_epochs: 500
@@ -22,7 +29,7 @@ params:
     gamma: 0.99
     critic_method: td-lambda
     lambda: 0.95
-    target_critic_alpha: 0.2
+    target_critic_alpha: 0.95 #CHANGED -- stabilizes training perhaps
     obs_rms: true
     ret_rms: false
     critic_iterations: 16

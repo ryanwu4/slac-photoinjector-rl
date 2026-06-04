@@ -4,8 +4,8 @@ surrogate env.
 
 Usage:
     python -m photoinjector_rl.emittance_target.compare_diff_algos \
-        --ckpt trained/emittance_target/checkpoints/best-epoch=191-val_loss=0.0060.ckpt \
-        --norm-json processed/emittance_target_norm.json \
+        --ckpt trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt \
+        --norm-json processed/emittance_target_hifi_norm.json \
         --out-dir logs/compare_diff \
         --seeds 0,1,2 --budget 500000 --algos ppo,shac,bptt
 
@@ -66,6 +66,7 @@ def _run_shac(args, seed: int, run_dir: Path) -> None:
         "--ckpt", args.ckpt, "--norm-json", args.norm_json,
         "--logdir", str(run_dir), "--seed", str(seed),
         "--max-epochs", str(max_epochs),
+        "--distgen-drift-std", str(args.distgen_drift_std),
         "--device", args.device,
     ]
     print(f"[compare] $ {' '.join(cmd)}", flush=True)
@@ -80,6 +81,7 @@ def _run_bptt(args, seed: int, run_dir: Path) -> None:
         "--ckpt", args.ckpt, "--norm-json", args.norm_json,
         "--logdir", str(run_dir), "--seed", str(seed),
         "--max-epochs", str(max_epochs),
+        "--distgen-drift-std", str(args.distgen_drift_std),
         "--device", args.device,
     ]
     print(f"[compare] $ {' '.join(cmd)}", flush=True)
@@ -92,6 +94,8 @@ def _run_ppo(args, seed: int, run_dir: Path) -> None:
         "--ckpt", args.ckpt, "--norm-json", args.norm_json,
         "--out-dir", str(run_dir), "--seed", str(seed),
         "--total-timesteps", str(args.budget),
+        "--distgen-drift-std", str(args.distgen_drift_std),
+        "--device", args.device,
     ]
     print(f"[compare] $ {' '.join(cmd)}", flush=True)
     subprocess.run(cmd, check=True)
@@ -288,7 +292,12 @@ def _load_env_kwargs(run_dir: Path) -> dict:
 
 
 def _eval_ppo_policy(run_dir: Path, args, num_rollouts: int = 256) -> np.ndarray:
-    """Load SB3 PPO zip and roll out on the existing PhotoinjectorEnv."""
+    """Load SB3 PPO zip and roll out on the existing PhotoinjectorEnv.
+
+    The eval env uses the same `distgen_drift_std` as training so PPO is
+    scored under the drift regime it was trained on, matching how the
+    SHAC/BPTT eval recovers the value from each run's cfg.yaml.
+    """
     from stable_baselines3 import PPO
 
     from .env import PhotoinjectorEnv
@@ -303,6 +312,7 @@ def _eval_ppo_policy(run_dir: Path, args, num_rollouts: int = 256) -> np.ndarray
     env = PhotoinjectorEnv.from_checkpoint(
         ckpt_path=args.ckpt, norm_json=args.norm_json,
         device=args.device, max_steps=64,
+        distgen_drift_std=float(args.distgen_drift_std),
     )
     emits = np.empty(num_rollouts, dtype=np.float32)
     for i in range(num_rollouts):
@@ -475,6 +485,15 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--budget", type=int, default=50_000)
     p.add_argument("--algos", default="ppo,shac,bptt",
                    help="comma-separated; subset of ppo,shac,bptt")
+    p.add_argument("--distgen-drift-std", type=float, default=0.0,
+                   help="per-step Gaussian random-walk std on the hidden 6-D "
+                        "distgen context (normalized units), modelling "
+                        "cathode jitter. 0.0 (default) reproduces the static "
+                        "baseline. Applied identically to ALL algos for both "
+                        "training and the post-training deterministic eval: "
+                        "passed to train_{shac,bptt,ppo} (recorded in each "
+                        "run's cfg.yaml) and into the PPO eval env. SHAC/BPTT "
+                        "eval picks it up from cfg.yaml automatically.")
     p.add_argument("--device", default="cuda:0")
     p.add_argument("--eval-rollouts", type=int, default=256)
     p.add_argument("--skip-train", action="store_true",
@@ -599,8 +618,19 @@ def main() -> None:
             print(f"[compare] rollout plot failed for {algo}: {e}",
                   file=sys.stderr)
 
-    # JSON dump of all aggregated stats for downstream analysis.
-    stats: dict = {}
+    # JSON dump of all aggregated stats for downstream analysis. The run
+    # config (notably distgen_drift_std) is stamped under "_config" so a
+    # drift sweep's output dirs are self-describing.
+    stats: dict = {
+        "_config": {
+            "distgen_drift_std": float(args.distgen_drift_std),
+            "budget": int(args.budget),
+            "seeds": seeds,
+            "eval_rollouts": int(args.eval_rollouts),
+            "ckpt": args.ckpt,
+            "norm_json": args.norm_json,
+        }
+    }
     for algo, runs in per_algo.items():
         stats[algo] = []
         for r in runs:

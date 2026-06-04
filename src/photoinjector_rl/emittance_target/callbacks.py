@@ -1,5 +1,5 @@
 """
-Custom SB3 callbacks for the emittance_target SAC training loop.
+Custom SB3 callbacks for the emittance_target PPO training loop.
 """
 # pyright: reportPrivateImportUsage=false
 from __future__ import annotations

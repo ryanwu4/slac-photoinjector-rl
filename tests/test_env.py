@@ -258,7 +258,7 @@ def test_terminal_emit_bonus_only_affects_last_step(constant_surrogate) -> None:
 def test_invalid_cuda_index_in_resolve_device() -> None:
     """Asking for a device past torch.cuda.device_count() exits with a message."""
     import torch
-    from photoinjector_rl.emittance_target.train_sac import resolve_device
+    from photoinjector_rl.emittance_target.train_ppo import resolve_device
 
     # cpu always resolves.
     assert resolve_device("cpu") == "cpu"
@@ -302,9 +302,9 @@ def test_from_checkpoint_smoke(checkpoint_path, norm_json_path) -> None:
 def test_reset_regression_seed42(checkpoint_path, norm_json_path) -> None:
     """With seed=42, the post-reset y_norm and emittance are deterministic.
 
-    Golden values were captured on 2026-05-12 against the trained
-    `trained/no_moments/checkpoints/best-*.ckpt`. If you retrain, update
-    these constants.
+    Golden values were captured against the shipped hi-fi surrogate
+    `trained/emittance_target_hifi/checkpoints/best-*.ckpt`. If you retrain,
+    update these constants.
     """
     env = PhotoinjectorEnv.from_checkpoint(
         ckpt_path=checkpoint_path,
@@ -338,18 +338,18 @@ def test_step_sequence_regression(checkpoint_path, norm_json_path) -> None:
         assert r == pytest.approx(r_gold, abs=1e-4)
 
 
-# ---------- Regression golden values (locked 2026-05-12) ---------------------
+# ---------- Regression golden values -----------------------------------------
 #
-# Checkpoint: trained/emittance_target/checkpoints/best-epoch=191-val_loss=0.0060.ckpt
-# If retrained, replay these via /tmp/compute_goldens.py (or any equivalent).
+# Checkpoint: trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt
+# If retrained, recompute these against the new checkpoint.
 
-REG_RESET_SEED42_YNORM = -0.9039869904518127
-REG_RESET_SEED42_EMIT_M2 = 3.1365188897605754e-11
+REG_RESET_SEED42_YNORM = -0.9407756924629211
+REG_RESET_SEED42_EMIT_M2 = 3.25181485738963e-11
 REG_STEP_SEQ_TRAJ = [
     # (y_norm_after_step, reward)
-    (-0.955331027507782, 0.955331027507782),
-    (-0.9467446208000183, 0.9467446208000183),
-    (-0.9431595206260681, 0.9431595206260681),
-    (-0.9172084331512451, 0.9172084331512451),
-    (-1.0337332487106323, 1.0337332487106323),
+    (-0.9836502075195312, 0.9836502075195312),
+    (-0.9899106621742249, 0.9899106621742249),
+    (-1.0061023235321045, 1.0061023235321045),
+    (-0.9641300439834595, 0.9641300439834595),
+    (-1.021549940109253, 1.021549940109253),
 ]

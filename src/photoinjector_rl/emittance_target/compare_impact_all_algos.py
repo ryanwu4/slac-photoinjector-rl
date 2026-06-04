@@ -19,7 +19,7 @@ Usage:
         --compare-dir logs/compare_diff \\
         --impact-config configs/impact/ImpactT_config.yaml \\
         --distgen-input configs/impact/distgen_template.yaml \\
-        --norm-json processed/emittance_target_norm.json \\
+        --norm-json processed/emittance_target_hifi_norm.json \\
         --out logs/compare_diff_impact/all_algos \\
         --n-samples 20 --n-workers 8 --max-steps 64
 """

@@ -226,7 +226,7 @@ def test_settings_dict_has_correct_keys_and_ranges(monkeypatch) -> None:
         lo, hi = SETTING_BOUNDS[k]
         assert lo - 1e-9 <= captured[k] <= hi + 1e-9, \
             f"{k}={captured[k]} outside [{lo}, {hi}]"
-    # Fidelity constants exactly match the lhs_train.yaml block.
+    # Fidelity constants exactly match DEFAULT_LHS_CONSTANTS (fast low-fi smoke defaults).
     assert captured["distgen:n_particle"] == 2000
     assert captured["header:Nx"] == 8
     assert captured["header:Ny"] == 8

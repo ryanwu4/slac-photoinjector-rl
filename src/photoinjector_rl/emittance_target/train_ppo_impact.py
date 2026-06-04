@@ -1,7 +1,7 @@
 """
 Fine-tune the surrogate-trained PPO policy directly against Impact-T.
 
-Warm-starts from a `--warm-start` zip (default: trained/ppo_v1/eval/best_model.zip),
+Warm-starts from a `--warm-start` zip (e.g. trained/ppo_emittance_target/eval/best_model.zip),
 swaps the env from surrogate -> ImpactPhotoinjectorEnv, and runs a short
 on-policy update phase with conservative hyperparameters.
 
@@ -11,10 +11,10 @@ remains useful.
 
 Usage:
     python -m photoinjector_rl.emittance_target.train_ppo_impact \\
-        --warm-start trained/ppo_v1/eval/best_model.zip \\
+        --warm-start trained/ppo_emittance_target/eval/best_model.zip \\
         --impact-config configs/impact/ImpactT_config.yaml \\
         --distgen-input configs/impact/distgen_template.yaml \\
-        --norm-json processed/emittance_target_norm.json \\
+        --norm-json processed/emittance_target_hifi_norm.json \\
         --out-dir trained/ppo_impact_v1 \\
         --total-timesteps 2048
 
@@ -104,7 +104,7 @@ def build_single_env(args, seed: int) -> Monitor:
 def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--warm-start",
-                   default="trained/ppo_v1/eval/best_model.zip",
+                   default="trained/ppo_emittance_target/eval/best_model.zip",
                    help="path to PPO zip to fine-tune from. Pass 'none' to "
                         "train from scratch (rare; usually you want the "
                         "surrogate-trained policy as the warm start).")

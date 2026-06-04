@@ -1,32 +1,31 @@
+# BPTT over the conditional-flow surrogate (FlowBunchEnv). Network/config blocks
+# are IDENTICAL to bptt_photoinjector.yaml for a fair comparison with the v1
+# scalar-MLP BPTT run. Only diff_env differs.
 params:
   diff_env:
-    name: DiffPhotoinjectorEnv
+    name: FlowBunchEnv
     episode_length: 64
     stochastic_env: true
     action_scale: 0.05
     distgen_drift_std: 0.0
+    property: norm_emit_4d
+    reward_mode: minimize
+    n_particles: 512
   general:
     seed: 0
     device: cuda:0
     render: false
     train: true
-    logdir: logs/shac
+    logdir: logs/bptt_flow
   config:
-    name: PhotoinjectorSHAC
+    name: PhotoinjectorFlowBPTT
     num_actors: 32
-    steps_num: 16
-    max_epochs: 500
+    steps_num: 64           # full-episode BPTT
+    max_epochs: 200
     actor_learning_rate: 5e-4
-    critic_learning_rate: 1e-3
     lr_schedule: linear
     gamma: 0.99
-    critic_method: td-lambda
-    lambda: 0.95
-    target_critic_alpha: 0.2
     obs_rms: true
-    ret_rms: false
-    critic_iterations: 16
-    num_batch: 4
     truncate_grads: true
     grad_norm: 1.0
     rew_scale: 1.0
@@ -40,7 +39,3 @@ params:
       units: [128, 128]
       activation: elu
     actor_logstd_init: -1.0
-    critic: CriticMLP
-    critic_mlp:
-      units: [128, 128]
-      activation: elu

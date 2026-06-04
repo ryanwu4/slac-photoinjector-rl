@@ -20,7 +20,7 @@ SETTING_KEYS = [
     "distgen:transforms:r1:angle:value",
 ]
 
-# Bounds from configs/sweep/lhs_train.yaml -- used for min-max normalization
+# Bounds from configs/sweep/lhs_train_hifi.yaml -- used for min-max normalization
 # of the settings vector. Keep in sync with the YAML.
 SETTING_BOUNDS = {
     "SOL10111:solenoid_field_scale": (-0.32, -0.2),

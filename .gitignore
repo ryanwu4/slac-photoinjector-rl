@@ -2,11 +2,13 @@ workdir/
 archives/
 processed/
 plots/
+figures/
 trained/
+logs/
 lightning_logs/
 dump*.yaml
 __pycache__/
 *.egg-info/
 .venv/
 *.pyc
-logs/
+.pytest_cache/

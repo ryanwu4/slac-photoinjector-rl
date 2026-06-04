@@ -104,8 +104,8 @@ def test_inference_regression_fixed_input(loaded_model, loaded_norm) -> None:
     assert emit_m2 == pytest.approx(REG_ZERO_INPUT_EMIT_M2, rel=1e-3)
 
 
-# Golden values locked 2026-05-12 against
-# trained/emittance_target/checkpoints/best-epoch=191-val_loss=0.0060.ckpt
+# Golden values locked against the shipped hi-fi surrogate
+# trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt
 # Replace with fresh numbers if you retrain.
-REG_ZERO_INPUT_YNORM = -0.5499303340911865
-REG_ZERO_INPUT_EMIT_M2 = 3.599346081384293e-11
+REG_ZERO_INPUT_YNORM = -0.6682217717170715
+REG_ZERO_INPUT_EMIT_M2 = 3.7833420608966377e-11

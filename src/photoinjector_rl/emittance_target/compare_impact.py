@@ -9,20 +9,23 @@ parallel.
 
 Outputs:
     <out-stem>.npz   -- raw paired data (seeds + per-policy emits + per-step trajectories)
-    <out-stem>.png   -- 4-panel paired figure (same layout as compare_algos.py)
+    <out-stem>.png   -- 4-panel paired figure
     stdout           -- per-metric table + head-to-head win rate
 
 Usage:
     python -m photoinjector_rl.emittance_target.compare_impact \\
-        --policy-a trained/ppo_v1/eval/best_model.zip \\
+        --policy-a trained/ppo_emittance_target/eval/best_model.zip \\
         --policy-b trained/ppo_impact_v1/ppo_impact_final.zip \\
         --label-a 'PPO (surrogate-only)' \\
         --label-b 'PPO (impact-finetune)' \\
         --impact-config configs/impact/ImpactT_config.yaml \\
         --distgen-input configs/impact/distgen_template.yaml \\
-        --norm-json processed/emittance_target_norm.json \\
+        --norm-json processed/emittance_target_hifi_norm.json \\
         --n-samples 30 --n-workers 8 --max-steps 32 \\
         --out trained/compare_impact
+
+For >=2 policies or to mix PPO (.zip) with SHAC/BPTT (.pt) checkpoints, use
+compare_n_impact.py instead (its PolicyAdapter dispatches by file suffix).
 """
 # pyright: reportPrivateImportUsage=false
 from __future__ import annotations

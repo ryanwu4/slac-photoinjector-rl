@@ -217,8 +217,8 @@ cat <<EOF
 Next step (manual): run the BPTT/SHAC/PPO comparison against this surrogate.
 
   python -m photoinjector_rl.emittance_target.compare_diff_algos \
-      --ckpt /home/rwu4/photoinjector-rl/slac-photoinjector-rl/trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt \
-      --norm-json /home/rwu4/photoinjector-rl/slac-photoinjector-rl/processed/emittance_target_hifi_norm.json \
+      --ckpt "${BEST_CKPT}" \
+      --norm-json ${PROCESSED_NORM} \
       --out-dir logs/compare_diff_hifi \
       --algos ppo,shac,bptt \
       --seeds 0,1,2 \
