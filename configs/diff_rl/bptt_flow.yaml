@@ -11,6 +11,27 @@ params:
     property: norm_emit_4d
     reward_mode: minimize
     n_particles: 512
+    # ---- moving-target (aspect,tilt) controller (used only with --moving-shape) ----
+    shape_scale: 0.3            # reward scale: y_norm = ||(s1,s2)-(s1*,s2*)||/scale
+    action_rate_penalty: 0.0    # -lambda*||Δaction|| smooth-control penalty (0=off)
+    curriculum:                 # CurriculumConfig: setpoint-trajectory generator + ramp
+      enabled: true
+      r_max: 0.85
+      p_static_base: 0.75
+      p_static_slope: 0.70
+      p_static_floor: 0.05
+      p_steps: 0.30
+      hold_frac_easy: 0.50
+      hold_frac_hard: 0.125
+      hold_min: 4
+      smooth_r_lo: 0.30
+      tilt_turns_easy: 0.25
+      tilt_turns_hard: 2.0
+      ou_sigma_easy: 0.02
+      ou_sigma_hard: 0.10
+      ou_decay: 0.92
+      ou_init_frac: 0.70
+      difficulty_bias_lo: 0.40
   general:
     seed: 0
     device: cuda:0

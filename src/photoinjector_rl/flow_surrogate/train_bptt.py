@@ -26,6 +26,9 @@ import yaml
 from photoinjector_rl.emittance_target.diffrl import BPTT
 
 from .diff_env import FlowBunchEnv
+from .moving_shape_cli import (add_moving_shape_args, apply_moving_shape_overrides,
+                               build_moving_env_fn, make_progress_hook)
+from .shape_env import ShapeTargetEnv
 
 
 def _parse_args() -> argparse.Namespace:
@@ -40,6 +43,13 @@ def _parse_args() -> argparse.Namespace:
                    choices=["minimize", "maximize", "target"])
     p.add_argument("--target", default=None, type=float)
     p.add_argument("--n-particles", default=None, type=int)
+    p.add_argument("--shape-aspect", default=None, type=float,
+                   help="target eigen aspect ratio (>=1); enables ShapeTargetEnv.")
+    p.add_argument("--shape-tilt-deg", default=0.0, type=float,
+                   help="target tilt angle in degrees (with --shape-aspect).")
+    p.add_argument("--shape-scale", default=None, type=float,
+                   help="shape-target reward scale (O(1)); default from cfg / 0.3.")
+    add_moving_shape_args(p)
     p.add_argument("--logdir", default=None, type=str)
     p.add_argument("--seed", default=None, type=int)
     p.add_argument("--device", default=None, type=str)
@@ -79,6 +89,12 @@ def _override(cfg: dict, args: argparse.Namespace) -> dict:
         de["target"] = args.target
     if args.n_particles is not None:
         de["n_particles"] = args.n_particles
+    if args.shape_aspect is not None:
+        de["shape_aspect"] = args.shape_aspect
+        de["shape_tilt_deg"] = args.shape_tilt_deg
+        if args.shape_scale is not None:
+            de["shape_scale"] = args.shape_scale
+    apply_moving_shape_overrides(de, args)
     if args.play:
         g["train"] = False
         g["checkpoint"] = args.checkpoint
@@ -87,6 +103,17 @@ def _override(cfg: dict, args: argparse.Namespace) -> dict:
 
 def _build_env_fn(cfg: dict, flow_ckpt: str, norm_json: str, processed: str | None):
     de = cfg["params"]["diff_env"]
+    if de.get("shape_aspect") is not None:
+        return partial(
+            ShapeTargetEnv,
+            flow_ckpt=flow_ckpt, norm_json=norm_json, processed_h5=processed,
+            target_aspect=de["shape_aspect"],
+            target_tilt_deg=de.get("shape_tilt_deg", 0.0),
+            scale=de.get("shape_scale", 0.3),
+            n_particles=de.get("n_particles", 512),
+            action_scale=de.get("action_scale", 0.05),
+            distgen_drift_std=de.get("distgen_drift_std", 0.0),
+        )
     return partial(
         FlowBunchEnv,
         flow_ckpt=flow_ckpt,
@@ -122,10 +149,19 @@ def main() -> None:
     cfg = _override(cfg, args)
     Path(cfg["params"]["general"]["logdir"]).mkdir(parents=True, exist_ok=True)
 
-    env_fn = _build_env_fn(cfg, args.flow_ckpt, args.norm_json, args.processed)
+    de = cfg["params"]["diff_env"]
+    curriculum = None
+    if de.get("moving_shape"):
+        env_fn, curriculum = build_moving_env_fn(
+            de, args.flow_ckpt, args.norm_json, args.processed)
+    else:
+        env_fn = _build_env_fn(cfg, args.flow_ckpt, args.norm_json, args.processed)
     algo = BPTT(cfg, env_fn=env_fn)
     if cfg["params"]["general"]["train"]:
         _attach_csv_hook(algo, cfg["params"]["general"]["logdir"])
+        if curriculum is not None:
+            algo.step_metrics_hook = make_progress_hook(
+                algo.step_metrics_hook, cfg, curriculum, ramp=curriculum.enabled)
         algo.train()
     else:
         algo.play(cfg)

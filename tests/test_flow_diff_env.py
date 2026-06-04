@@ -212,3 +212,177 @@ def test_shac_smoke_runs(tmp_path) -> None:
     # SHAC writes best/final policy .pt into logdir.
     pts = list(tmp_path.glob("*.pt"))
     assert pts, "SHAC did not write a policy checkpoint"
+
+
+# ----- joint aspect + tilt shape control -----------------------------------
+
+def _tilted_cloud(aspect: float, tilt_deg: float, n: int = 20000) -> torch.Tensor:
+    """Synthetic (1,n,6) cloud with known eigen aspect + tilt (z/p columns zero)."""
+    import math
+    torch.manual_seed(0)
+    minor = 1.0e-3
+    u = torch.randn(n) * (minor * aspect)
+    v = torch.randn(n) * minor
+    th = math.radians(tilt_deg)
+    x = u * math.cos(th) - v * math.sin(th)
+    y = u * math.sin(th) + v * math.cos(th)
+    z = torch.zeros(n)
+    return torch.stack([x, y, z, z, z, z], dim=1)[None].double()
+
+
+def test_shape_helpers_recover_known_cloud() -> None:
+    from photoinjector_rl.flow_surrogate import properties as P
+    parts = _tilted_cloud(3.0, 30.0)
+    assert abs(P._eigen_aspect(parts).item() - 3.0) < 0.15
+    assert abs(P._tilt_angle_deg(parts).item() - 30.0) < 2.0
+
+
+def test_aspect_tilt_s_roundtrip() -> None:
+    from photoinjector_rl.flow_surrogate import properties as P
+    for a, t in [(2.0, 30.0), (3.0, -45.0), (1.5, 80.0)]:
+        s1, s2 = P.aspect_tilt_to_s(a, t)
+        aa, tt = P.s_to_aspect_tilt(torch.tensor([s1]), torch.tensor([s2]))
+        assert abs(aa.item() - a) < 1e-4 and abs(tt.item() - t) < 1e-3
+
+
+def test_s1_s2_differentiable() -> None:
+    from photoinjector_rl.flow_surrogate import properties as P
+    parts = _tilted_cloud(2.0, 20.0).float().requires_grad_(True)
+    (P._s1(parts).sum() + P._s2(parts).sum()).backward()
+    assert parts.grad is not None and parts.grad.abs().sum() > 0
+
+
+def test_shape_target_spec_zero_at_target() -> None:
+    from photoinjector_rl.flow_surrogate import properties as P
+    spec = P.ShapeTargetSpec.from_aspect_tilt(3.0, 30.0)
+    y = spec.reward_ynorm(_tilted_cloud(3.0, 30.0))
+    assert y.item() < 0.05                                   # ~0 at the target
+    y_off = spec.reward_ynorm(_tilted_cloud(3.0, -30.0))     # wrong tilt
+    assert y_off.item() > y.item() + 0.5
+
+
+def test_shape_target_env_differentiable() -> None:
+    from photoinjector_rl.flow_surrogate.shape_env import ShapeTargetEnv
+    env = ShapeTargetEnv(num_envs=4, device=DEV, seed=0, episode_length=4,
+                         no_grad=False, flow=_tiny_flow(), n_particles=64,
+                         target_aspect=2.0, target_tilt_deg=30.0)
+    obs = env.reset()
+    assert obs.shape == (4, 6)                               # fixed target -> 6-D obs
+    a = torch.zeros(4, 5, requires_grad=True)
+    _o, r, _d, info = env.step(a)
+    assert r.shape == (4,) and torch.isfinite(r).all()
+    assert "aspect" in info and "tilt_deg" in info and "shape_s1s2" in info
+    r.sum().backward()
+    assert a.grad is not None and a.grad.abs().sum() > 0
+
+
+# ----- moving-target (goal-conditioned) aspect+tilt tracking ----------------
+
+def test_sample_shape_trajectory_shape_and_reachable() -> None:
+    import numpy as np
+    from photoinjector_rl.flow_surrogate.shape_targets import (
+        CurriculumConfig, sample_shape_trajectory)
+    cfg = CurriculumConfig(r_max=0.7)
+    rng = np.random.default_rng(0)
+    for d in (0.0, 0.5, 1.0):
+        tr = sample_shape_trajectory(rng, 32, d, cfg)
+        assert tr.shape == (32, 2)
+        assert np.all(np.sqrt((tr ** 2).sum(1)) <= cfg.r_max + 1e-6)  # config r_max honored
+
+
+def test_curriculum_config_from_dict_and_eval_spec() -> None:
+    import numpy as np
+    from photoinjector_rl.flow_surrogate.shape_targets import (
+        CurriculumConfig, build_eval_trajectories)
+    cfg = CurriculumConfig.from_dict({"r_max": 0.5, "tilt_turns_hard": 3.0,
+                                      "unknown_key": 1})       # unknown ignored
+    assert cfg.r_max == 0.5 and cfg.tilt_turns_hard == 3.0
+    trajs = build_eval_trajectories(16, {"tilt_rotation": {"aspect": 2.5, "turns": 0.5}})
+    assert set(trajs) == {"tilt_rotation"} and trajs["tilt_rotation"].shape == (16, 2)
+    assert set(build_eval_trajectories(16)) == {"staircase", "tilt_rotation", "aspect_ramp"}
+
+
+def test_curriculum_difficulty_increases_variation() -> None:
+    import numpy as np
+    from photoinjector_rl.flow_surrogate.shape_targets import (
+        CurriculumState, sample_shape_trajectory)
+    rng = np.random.default_rng(1)
+
+    def mean_var(progress, n=200):
+        cur = CurriculumState(progress=progress)
+        vs = [sample_shape_trajectory(rng, 32, cur.difficulty_for_episode(rng)).var(0).sum()
+              for _ in range(n)]
+        return float(np.mean(vs))
+
+    # early curriculum (mostly static) varies less than late (steps + smooth).
+    assert mean_var(0.0) < mean_var(1.0)
+
+
+def _moving_env(**kw):
+    from photoinjector_rl.flow_surrogate.moving_shape_env import MovingShapeEnv
+    defaults = dict(num_envs=4, device=DEV, seed=0, episode_length=6,
+                    flow=_tiny_flow(), n_particles=64, scale=0.3)
+    defaults.update(kw)
+    return MovingShapeEnv(**defaults)
+
+
+def test_moving_shape_obs_layout_and_dim() -> None:
+    env = _moving_env(no_grad=True)
+    assert env.num_obs == 9 and env.num_actions == 5
+    obs = env.reset()
+    assert obs.shape == (4, 9)
+    assert torch.allclose(obs[:, :5], env._knobs)            # knobs first
+    # target dims (7,8) match the env's step-0 setpoint
+    ts1, ts2 = env._target_at_step()
+    assert torch.allclose(obs[:, 7], ts1) and torch.allclose(obs[:, 8], ts2)
+
+
+def test_moving_shape_target_advances_with_step_count() -> None:
+    import numpy as np
+    from photoinjector_rl.flow_surrogate.shape_targets import eval_aspect_ramp
+    T = 6
+    traj = eval_aspect_ramp(T, tilt_deg=10.0, a0=1.5, a1=3.0)   # strictly varying r
+    env = _moving_env(num_envs=3, episode_length=T + 4, no_grad=True,
+                      fixed_target_traj=traj)
+    obs = env.reset()
+    seen = []
+    for _ in range(T):
+        seen.append(obs[0, 7:9].cpu().numpy().copy())
+        obs, _r, _d, _i = env.step(torch.zeros(3, 5))
+    assert np.allclose(np.stack(seen), traj, atol=1e-5)        # setpoint tracks step
+
+
+def test_moving_shape_reward_differentiable() -> None:
+    env = _moving_env(no_grad=False)
+    env.reset()
+    a = torch.zeros(4, 5, requires_grad=True)
+    _o, r, _d, info = env.step(a)
+    assert r.shape == (4,) and torch.isfinite(r).all()
+    assert "aspect" in info and "tilt_deg" in info and "shape_s1s2" in info
+    r.sum().backward()
+    assert a.grad is not None and a.grad.abs().sum() > 0
+
+
+def test_moving_shape_info_cache_survives_reset() -> None:
+    # The info diagnostic cache (_s1s2_info) is _in_reset-guarded so a done-step
+    # auto-reset reports the TERMINAL shape; the obs sensor (_s1_cur) still updates.
+    env = _moving_env(no_grad=True, episode_length=8)
+    env.reset()
+    for _ in range(3):
+        env.step(torch.full((4, 5), 0.5))
+    info_before = env._s1s2_info.clone()
+    cur_before = env._s1_cur.clone()
+    env.reset()                                               # _in_reset guards info cache
+    assert torch.equal(env._s1s2_info, info_before)           # terminal cache preserved
+    assert not torch.equal(env._s1_cur, cur_before)           # obs sensor updated
+
+
+def test_moving_shape_initialize_trajectory_keeps_step_count() -> None:
+    env = _moving_env(no_grad=True, episode_length=10)
+    env.reset()
+    for _ in range(3):
+        env.step(torch.zeros(4, 5))
+    before = env._step_count.clone()
+    obs = env.initialize_trajectory()
+    assert obs.shape == (4, 9)
+    assert torch.equal(env._step_count, before)               # NOT reset by init_traj

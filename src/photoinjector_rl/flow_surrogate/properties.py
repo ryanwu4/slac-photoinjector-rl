@@ -78,6 +78,51 @@ def _energy_spread(parts: torch.Tensor) -> torch.Tensor:
     return e.std(dim=1, unbiased=False) / e.mean(dim=1)
 
 
+# ----- transverse SHAPE: aspect + tilt via the normalized 2nd-moment vector ---
+# All differentiable (centered means/vars/cov are smooth in the particle coords),
+# so SHAC/BPTT can backprop the reward through them.
+
+def _cov_xy_components(parts: torch.Tensor):
+    """Population (ddof=0) var_x, var_y, cov_xy of the (x,y) cloud. Each (B,)."""
+    xc = parts[:, :, 0] - parts[:, :, 0].mean(dim=1, keepdim=True)
+    yc = parts[:, :, 1] - parts[:, :, 1].mean(dim=1, keepdim=True)
+    var_x = (xc * xc).mean(dim=1)
+    var_y = (yc * yc).mean(dim=1)
+    cov_xy = (xc * yc).mean(dim=1)
+    return var_x, var_y, cov_xy
+
+
+def _s1(parts: torch.Tensor) -> torch.Tensor:
+    """Normalized x/y elongation (σx²−σy²)/(σx²+σy²) ∈ [−1,1] (NOT positive)."""
+    vx, vy, _ = _cov_xy_components(parts)
+    return (vx - vy) / (vx + vy).clamp_min(1e-30)
+
+
+def _s2(parts: torch.Tensor) -> torch.Tensor:
+    """Normalized x–y coupling 2·cov_xy/(σx²+σy²) ∈ [−1,1] (NOT positive)."""
+    vx, vy, cxy = _cov_xy_components(parts)
+    return 2.0 * cxy / (vx + vy).clamp_min(1e-30)
+
+
+def _eigen_aspect(parts: torch.Tensor) -> torch.Tensor:
+    """Rotation-invariant eigen aspect ratio σ_major/σ_minor = sqrt(λmax/λmin)
+    of the 2×2 (x,y) covariance. ≥ 1 (round=1)."""
+    vx, vy, cxy = _cov_xy_components(parts)
+    tr = vx + vy
+    det = vx * vy - cxy * cxy
+    disc = torch.sqrt((tr * tr - 4.0 * det).clamp_min(0.0) + 1e-30)
+    lam_max = 0.5 * (tr + disc)
+    lam_min = (0.5 * (tr - disc)).clamp_min(1e-30)
+    return torch.sqrt(lam_max / lam_min)
+
+
+def _tilt_angle_deg(parts: torch.Tensor) -> torch.Tensor:
+    """Major-axis tilt angle ½·atan2(2·cov_xy, σx²−σy²) in degrees ∈ (−90,90].
+    Reporting only (circular; ill-defined for round beams)."""
+    vx, vy, cxy = _cov_xy_components(parts)
+    return 0.5 * torch.atan2(2.0 * cxy, vx - vy) * (180.0 / math.pi)
+
+
 # name -> (fn, default transform). transform chooses the space the z-score /
 # target live in: log10 for positive, right-skewed quantities; identity else.
 PROPERTY_REGISTRY: dict[str, tuple[Callable[[torch.Tensor], torch.Tensor], str]] = {
@@ -91,9 +136,14 @@ PROPERTY_REGISTRY: dict[str, tuple[Callable[[torch.Tensor], torch.Tensor], str]]
     # symmetric (target-mode: |log10(r)-log10(target)|/std). Lever = CQ10121
     # (normal quad), with SQ10122 (skew) coupling. Intended use: reward-mode target.
     "aspect_ratio": (_aspect_ratio, "log10"),
+    # Rotation-invariant true shape (eigenvalue ratio). Solenoid-dominated lever.
+    "eigen_aspect": (_eigen_aspect, "log10"),
     "mean_energy": (_mean_energy, "identity"),
     "energy_spread": (_energy_spread, "log10"),
 }
+# s1/s2/tilt are NOT registered: s1/s2 can be negative (the registry + its
+# positivity tests assume positive scalars), and tilt is circular. They are used
+# directly by the joint shape-target path (ShapeTargetSpec / ShapeTargetEnv).
 
 
 # ----- reward spec -----------------------------------------------------------
@@ -197,3 +247,57 @@ def build_reward_spec(property_name: str, mode: str = "minimize", *,
 
     return RewardSpec(name=property_name, property_fn=fn, transform=t,
                       mean=mean, std=std, mode=mode, target=target)
+
+
+# ----- joint aspect+tilt control via the (s1,s2) shape-vector target ----------
+
+def aspect_tilt_to_s(aspect: float, tilt_deg: float) -> tuple[float, float]:
+    """Desired (eigen aspect ≥1, tilt angle deg) -> target shape vector (s1*,s2*).
+    r* = (a²−1)/(a²+1); s1*=r*·cos(2θ*), s2*=r*·sin(2θ*)."""
+    a2 = float(aspect) ** 2
+    r = (a2 - 1.0) / (a2 + 1.0)
+    th = math.radians(float(tilt_deg))
+    return r * math.cos(2.0 * th), r * math.sin(2.0 * th)
+
+
+def s_to_aspect_tilt(s1: torch.Tensor, s2: torch.Tensor):
+    """Shape vector (s1,s2) -> (eigen aspect, tilt deg). Tensor-friendly (eval)."""
+    s1 = torch.as_tensor(s1, dtype=torch.float64)
+    s2 = torch.as_tensor(s2, dtype=torch.float64)
+    r = torch.sqrt(s1 * s1 + s2 * s2).clamp(max=1.0 - 1e-9)
+    aspect = torch.sqrt((1.0 + r) / (1.0 - r))
+    tilt_deg = 0.5 * torch.atan2(s2, s1) * (180.0 / math.pi)
+    return aspect, tilt_deg
+
+
+@dataclass
+class ShapeTargetSpec:
+    """Joint aspect+tilt reward: y_norm = ‖(s1,s2) − (s1*,s2*)‖ / scale, so the
+    env reward = −y_norm drives the beam to a target ellipse (shape AND
+    orientation) at once. `mean`/`std` are duck-typed for the env's obs scaling
+    (the obs/last-y_norm channel is the O(1) tracking distance, already ~unit)."""
+
+    target_s1: float
+    target_s2: float
+    scale: float = 0.3        # ~dataset std of the shape vector -> O(1) reward
+    name: str = "shape_target"
+    mean: float = 0.0
+    std: float = 1.0
+
+    @classmethod
+    def from_aspect_tilt(cls, aspect: float, tilt_deg: float,
+                         scale: float = 0.3) -> "ShapeTargetSpec":
+        s1, s2 = aspect_tilt_to_s(aspect, tilt_deg)
+        return cls(target_s1=s1, target_s2=s2, scale=scale)
+
+    def reward_ynorm(self, parts: torch.Tensor) -> torch.Tensor:
+        """(B,) tracking distance / scale. Differentiable w.r.t. the particles."""
+        s1 = _s1(parts)
+        s2 = _s2(parts)
+        d = torch.sqrt((s1 - self.target_s1) ** 2
+                       + (s2 - self.target_s2) ** 2 + 1e-30)
+        return d / self.scale
+
+    def achieved(self, parts: torch.Tensor):
+        """(s1, s2) achieved by the beam (for eval reporting)."""
+        return _s1(parts), _s2(parts)

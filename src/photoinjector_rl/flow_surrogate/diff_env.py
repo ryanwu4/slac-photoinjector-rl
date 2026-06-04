@@ -51,6 +51,7 @@ class FlowBunchEnv(DiffPhotoinjectorEnv):
         n_particles: int = 512,
         action_scale: float = 0.05,
         distgen_drift_std: float = 0.0,
+        reward_spec=None,
     ):
         # Load flow + build reward spec BEFORE super().__init__: the parent's
         # __init__ ends with reset(), which calls our _forward_surrogate, so
@@ -64,12 +65,17 @@ class FlowBunchEnv(DiffPhotoinjectorEnv):
         self._flow = flow
         self._n_particles = int(n_particles)
 
-        if processed_h5 is None and norm_json is not None:
-            processed_h5 = str(norm_json).replace("_norm.json", ".h5")
-        self._reward_spec: RewardSpec = build_reward_spec(
-            property, reward_mode, flow=flow, processed_h5=processed_h5,
-            transform=transform, target=target,
-        )
+        # A subclass may inject a pre-built spec (e.g. ShapeTargetSpec) duck-typed
+        # with .mean/.std; otherwise build the scalar-property RewardSpec as usual.
+        if reward_spec is not None:
+            self._reward_spec = reward_spec
+        else:
+            if processed_h5 is None and norm_json is not None:
+                processed_h5 = str(norm_json).replace("_norm.json", ".h5")
+            self._reward_spec = build_reward_spec(
+                property, reward_mode, flow=flow, processed_h5=processed_h5,
+                transform=transform, target=target,
+            )
 
         # Parent freezes the flow (requires_grad_(False)) and skips MLP loading
         # because we pass a pre-built `surrogate`. target_mean/std come from the
@@ -82,6 +88,12 @@ class FlowBunchEnv(DiffPhotoinjectorEnv):
             target_std=self._reward_spec.std, action_scale=action_scale,
             distgen_drift_std=distgen_drift_std,
         )
+        # Cache of the achieved property value (B,) from the last non-reset
+        # forward. Eval reports THIS (the real property, e.g. aspect ratio)
+        # rather than inverting the reward y_norm -- which in target mode is a
+        # tracking error, not the property.
+        self._in_reset = False
+        self._last_property = torch.zeros(self.num_envs, device=self.device)
 
     @property
     def reward_spec(self) -> RewardSpec:
@@ -93,7 +105,9 @@ class FlowBunchEnv(DiffPhotoinjectorEnv):
                                distgen: torch.Tensor) -> torch.Tensor:
         x = torch.cat([knobs, distgen], dim=-1)                       # (B, 11)
         parts = self._flow.sample_physical(x, self._n_particles)      # (B, n, 6) physical
-        p = self._reward_spec.value(parts)                            # (B,)
+        p = self._reward_spec.value(parts)                            # (B,) raw property
+        if not getattr(self, "_in_reset", False):
+            self._last_property = p.detach()  # achieved property (pre-reset)
         return self._reward_spec.normalize(p)                         # (B,) y_norm
 
     def _forward_surrogate(self, knobs: torch.Tensor,
@@ -104,6 +118,24 @@ class FlowBunchEnv(DiffPhotoinjectorEnv):
             with torch.no_grad():
                 return self._sample_property_ynorm(knobs, distgen)
         return self._sample_property_ynorm(knobs, distgen)
+
+    # ----- reset/step overrides: expose the achieved property -----------------
+
+    def reset(self, env_ids=None):
+        # Guard so the auto-reset's forward pass inside step() does not overwrite
+        # the pre-reset property cached for that step's info.
+        self._in_reset = True
+        try:
+            return super().reset(env_ids)
+        finally:
+            self._in_reset = False
+
+    def step(self, action: torch.Tensor):
+        obs, reward, done, info = super().step(action)
+        # The achieved property at the post-action (pre-reset) state, so eval can
+        # report e.g. the true aspect ratio rather than invert(tracking_error).
+        info["property_value"] = self._last_property.detach().clone()
+        return obs, reward, done, info
 
     # ----- reporting helpers (eval) -----------------------------------------
 

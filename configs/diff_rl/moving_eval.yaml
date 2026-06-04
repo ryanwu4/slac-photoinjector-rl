@@ -1,0 +1,17 @@
+# Held-out target-rollout schedules for eval_tracking (--traj-config). Each entry
+# under `eval_trajectories` names a builder + its params (omit a name to drop it):
+#   staircase     : segments = list of [aspect, tilt_deg], equal holds (step-response)
+#   tilt_rotation : continuous tilt sweep of `turns`*180 deg at fixed `aspect`
+#   aspect_ramp   : linear aspect ramp a0->a1 at fixed `tilt_deg`
+# Also accepts an optional `curriculum:` block (same fields as the training YAML)
+# for PPO's --moving-config.
+eval_trajectories:
+  staircase:
+    segments: [[2.0, 0.0], [2.0, 45.0], [3.0, -30.0], [1.5, 80.0]]
+  tilt_rotation:
+    aspect: 2.0
+    turns: 1.0
+  aspect_ramp:
+    tilt_deg: 20.0
+    a0: 1.2
+    a1: 3.5

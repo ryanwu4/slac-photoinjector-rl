@@ -56,6 +56,10 @@ def _common_flow_args(args) -> list[str]:
         out += ["--processed", args.processed]
     if args.target is not None:
         out += ["--target", str(args.target)]
+    if args.shape_aspect is not None:  # shape mode overrides the scalar property
+        out += ["--shape-aspect", str(args.shape_aspect),
+                "--shape-tilt-deg", str(args.shape_tilt_deg),
+                "--shape-scale", str(args.shape_scale)]
     return out
 
 
@@ -113,34 +117,47 @@ def _read_ppo_progress(run_dir: Path):
 # --- deterministic eval on a fresh FlowBunchEnv -----------------------------
 
 def _make_eval_env(args, env_kwargs: dict, num_rollouts: int, seed: int):
-    from .diff_env import FlowBunchEnv
     ep_len = int(env_kwargs.get("episode_length", args.episode_length))
-    return FlowBunchEnv(
+    common = dict(
         num_envs=num_rollouts, device=args.device, seed=seed,
         episode_length=ep_len, stochastic_init=True, no_grad=True,
         flow_ckpt=args.flow_ckpt, norm_json=args.norm_json,
-        processed_h5=args.processed, property=args.property,
-        reward_mode=args.reward_mode, target=args.target,
-        n_particles=args.n_particles,
+        processed_h5=args.processed, n_particles=args.n_particles,
         action_scale=float(env_kwargs.get("action_scale", 0.05)),
         distgen_drift_std=float(env_kwargs.get("distgen_drift_std",
                                                args.distgen_drift_std)),
-    ), ep_len
+    )
+    if args.shape_aspect is not None:
+        from .shape_env import ShapeTargetEnv
+        env = ShapeTargetEnv(target_aspect=args.shape_aspect,
+                             target_tilt_deg=args.shape_tilt_deg,
+                             scale=args.shape_scale, **common)
+    else:
+        from .diff_env import FlowBunchEnv
+        env = FlowBunchEnv(property=args.property, reward_mode=args.reward_mode,
+                           target=args.target, **common)
+    return env, ep_len
 
 
 def _rollout_terminal(env, ep_len: int, action_fn) -> np.ndarray:
-    """Roll out `action_fn` deterministically; return terminal property (B,).
+    """Roll out `action_fn` deterministically; return the terminal PROPERTY (B,)
+    in physical units (e.g. norm_emit_4d in m^2, or aspect ratio σx/σy).
 
-    `action_fn(obs_torch) -> action_torch` ([-1,1]^5 on the env device). The
-    terminal value is read from info["obs_before_reset"] (the env auto-resets on
-    the final step), inverted to physical units via env.physical_emit.
+    `action_fn(obs_torch) -> action_torch` ([-1,1]^5 on the env device). We read
+    the achieved property from info["property_value"] (the env's pre-reset cache).
+    This is the true property — correct for ALL reward modes. In particular for
+    `target` mode the reward/obs carry the tracking ERROR, so inverting it
+    (the old path) would report ~1.0 regardless of the achieved value; the
+    fallback below is only for envs that don't expose property_value.
     """
     obs = env.reset()
     info: dict = {}
     with torch.no_grad():
         for _ in range(ep_len):
             obs, _r, _d, info = env.step(action_fn(obs))
-        terminal_y = info["obs_before_reset"][:, -1].detach()
+        if info.get("property_value") is not None:
+            return info["property_value"].detach().cpu().numpy()
+        terminal_y = info["obs_before_reset"][:, -1].detach()  # fallback
         return env.physical_emit(terminal_y).cpu().numpy()
 
 
@@ -181,6 +198,43 @@ def _eval_ppo(run_dir: Path, args, num_rollouts: int,
         return torch.from_numpy(np.asarray(act_np, dtype=np.float32)).to(args.device)
 
     return _rollout_terminal(env, ep_len, action_fn)
+
+
+def _action_fn_for(algo: str, run_dir: Path, args, env):
+    """Build the deterministic action fn for a saved policy (diffrl or PPO)."""
+    if algo == "ppo":
+        from stable_baselines3 import PPO
+        model = PPO.load(str(run_dir / "ppo_final.zip"), device=args.device)
+
+        def fn(obs):
+            act_np, _ = model.predict(obs.detach().cpu().numpy(), deterministic=True)
+            return torch.from_numpy(np.asarray(act_np, dtype=np.float32)).to(args.device)
+        return fn
+    primary, fallback = (("best_policy.pt", "final_policy.pt")
+                         if args.diffrl_policy == "best"
+                         else ("final_policy.pt", "best_policy.pt"))
+    pt = run_dir / primary
+    if not pt.exists():
+        pt = run_dir / fallback
+    actor, obs_rms = _load_diffrl_actor(pt, args.device)
+
+    def fn(obs):
+        o = obs_rms.normalize(obs) if obs_rms is not None else obs
+        return torch.tanh(actor(o, deterministic=True))
+    return fn
+
+
+def _eval_shape(algo: str, run_dir: Path, args, num_rollouts: int,
+                env_kwargs: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Shape mode: roll out, return (achieved eigen aspect, achieved tilt deg)."""
+    env, ep_len = _make_eval_env(args, env_kwargs, num_rollouts, seed=12345)
+    action_fn = _action_fn_for(algo, run_dir, args, env)
+    obs = env.reset()
+    info: dict = {}
+    with torch.no_grad():
+        for _ in range(ep_len):
+            obs, _r, _d, info = env.step(action_fn(obs))
+    return (info["aspect"].cpu().numpy(), info["tilt_deg"].cpu().numpy())
 
 
 def _load_env_kwargs(run_dir: Path) -> dict:
@@ -314,6 +368,12 @@ def _parse_args() -> argparse.Namespace:
                    choices=["minimize", "maximize", "target"])
     p.add_argument("--target", type=float, default=None)
     p.add_argument("--n-particles", type=int, default=512)
+    # Joint aspect+tilt control: targets the (s1,s2) shape vector (overrides
+    # --property). Terminal report = achieved eigen aspect + tilt.
+    p.add_argument("--shape-aspect", type=float, default=None,
+                   help="target eigen aspect ratio (>=1); enables shape mode.")
+    p.add_argument("--shape-tilt-deg", type=float, default=0.0)
+    p.add_argument("--shape-scale", type=float, default=0.3)
     p.add_argument("--episode-length", type=int, default=64)
     p.add_argument("--distgen-drift-std", type=float, default=0.0)
     p.add_argument("--device", default="cuda:0")
@@ -381,9 +441,20 @@ def main() -> None:
                     entry["learning_curve_wall"] = (walls, -losses)
 
             try:
-                if algo == "ppo":
+                if args.shape_aspect is not None:
+                    aspect, tilt = _eval_shape(algo, run_dir, args, args.eval_rollouts,
+                                               _load_env_kwargs(run_dir))
+                    entry["terminal_emit"] = aspect       # achieved eigen aspect
+                    entry["terminal_tilt"] = tilt         # achieved tilt (deg)
+                    print(f"[compare] {algo} seed={seed}: achieved aspect "
+                          f"median={np.median(aspect):.3f} (target {args.shape_aspect}), "
+                          f"tilt median={np.median(tilt):+.1f}° (target {args.shape_tilt_deg:+.1f}°)")
+                elif algo == "ppo":
                     term = _eval_ppo(run_dir, args, args.eval_rollouts,
                                      _load_env_kwargs(run_dir))
+                    entry["terminal_emit"] = term
+                    print(f"[compare] {algo} seed={seed}: terminal {args.property} "
+                          f"median={np.median(term):.3e}")
                 else:
                     primary, fallback = (("best_policy.pt", "final_policy.pt")
                                          if args.diffrl_policy == "best"
@@ -393,15 +464,17 @@ def main() -> None:
                         policy_pt = run_dir / fallback
                     term = _eval_diffrl(policy_pt, args, args.eval_rollouts,
                                         _load_env_kwargs(run_dir))
-                entry["terminal_emit"] = term
-                print(f"[compare] {algo} seed={seed}: terminal {args.property} "
-                      f"median={np.median(term):.3e}")
+                    entry["terminal_emit"] = term
+                    print(f"[compare] {algo} seed={seed}: terminal {args.property} "
+                          f"median={np.median(term):.3e}")
             except Exception as e:
                 print(f"[compare] eval failed for {algo} seed={seed}: {e}")
                 entry["terminal_emit"] = None
             per_algo[algo].append(entry)
 
-    _plot_results(per_algo, out_dir, args.property)
+    shape_mode = args.shape_aspect is not None
+    plot_label = "eigen_aspect (shape mode)" if shape_mode else args.property
+    _plot_results(per_algo, out_dir, plot_label)
     _write_summary(per_algo, out_dir)
 
     stats: dict = {"_config": {"property": args.property,
@@ -412,11 +485,22 @@ def main() -> None:
                                "eval_rollouts": int(args.eval_rollouts),
                                "diffrl_policy": args.diffrl_policy,
                                "flow_ckpt": args.flow_ckpt}}
+    if shape_mode:
+        stats["_config"].update(shape_target_aspect=args.shape_aspect,
+                                shape_target_tilt_deg=args.shape_tilt_deg)
     for algo, runs in per_algo.items():
-        stats[algo] = [{"seed": r["seed"], "run_dir": r["run_dir"],
-                        "terminal_median": (float(np.median(r["terminal_emit"]))
-                                            if r.get("terminal_emit") is not None else None)}
-                       for r in runs]
+        entries = []
+        for r in runs:
+            t = r.get("terminal_emit")
+            e = {"seed": r["seed"], "run_dir": r["run_dir"],
+                 "terminal_median": float(np.median(t)) if t is not None else None}
+            if shape_mode and r.get("terminal_tilt") is not None:
+                e["aspect_median"] = float(np.median(t)) if t is not None else None
+                e["tilt_median_deg"] = float(np.median(r["terminal_tilt"]))
+                e["tilt_mae_deg"] = float(np.mean(np.abs(
+                    ((r["terminal_tilt"] - args.shape_tilt_deg + 90.0) % 180.0) - 90.0)))
+            entries.append(e)
+        stats[algo] = entries
     with open(out_dir / "stats.json", "w") as f:
         json.dump(stats, f, indent=2)
     print(f"[compare] wrote {out_dir / 'stats.json'}")

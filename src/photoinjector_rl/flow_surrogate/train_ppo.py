@@ -28,6 +28,7 @@ from stable_baselines3.common.logger import configure as configure_logger
 from stable_baselines3.common.utils import get_latest_run_id
 from stable_baselines3.common.vec_env import VecMonitor
 
+from .moving_shape_cli import CurriculumCallback
 from .vec_env import FlowSurrogateVecEnv
 
 
@@ -53,6 +54,22 @@ def build_argparser() -> argparse.ArgumentParser:
                    choices=["minimize", "maximize", "target"])
     p.add_argument("--target", type=float, default=None)
     p.add_argument("--n-particles", type=int, default=512)
+    # Joint aspect+tilt control: if --shape-aspect set, target the (s1,s2) shape.
+    p.add_argument("--shape-aspect", type=float, default=None,
+                   help="target eigen aspect ratio (>=1); enables ShapeTargetEnv.")
+    p.add_argument("--shape-tilt-deg", type=float, default=0.0)
+    p.add_argument("--shape-scale", type=float, default=0.3)
+    # Moving-target (goal-conditioned) (aspect,tilt) tracking (MovingShapeVecEnv).
+    p.add_argument("--moving-shape", action="store_true",
+                   help="goal-conditioned moving (aspect,tilt) setpoint tracking.")
+    p.add_argument("--curriculum", dest="curriculum", action="store_const", const=True,
+                   default=None, help="ramp difficulty (override moving-config).")
+    p.add_argument("--no-curriculum", dest="curriculum", action="store_const", const=False,
+                   help="full difficulty mix from the start (override moving-config).")
+    p.add_argument("--moving-config", default=None,
+                   help="YAML/JSON with a `curriculum` block (CurriculumConfig fields).")
+    p.add_argument("--r-max", type=float, default=None,
+                   help="override curriculum.r_max.")
 
     # PPO hyperparameters (match emittance_target/train_ppo defaults).
     p.add_argument("--total-timesteps", type=int, default=500_000)
@@ -97,21 +114,47 @@ def train(args: argparse.Namespace) -> dict:
     print(f"[train_ppo_flow] device={device} property={args.property} "
           f"n_particles={args.n_particles}")
 
-    train_env = VecMonitor(FlowSurrogateVecEnv(
-        args.n_envs,
-        flow_ckpt=args.flow_ckpt,
-        norm_json=args.norm_json,
-        processed_h5=args.processed,
-        property=args.property,
-        reward_mode=args.reward_mode,
-        target=args.target,
-        n_particles=args.n_particles,
-        device=device,
-        seed=args.seed,
-        episode_length=args.episode_length,
-        action_scale=args.action_scale,
-        distgen_drift_std=args.distgen_drift_std,
-    ))
+    curriculum = None
+    if args.moving_shape:
+        from .moving_shape_cli import load_moving_config
+        from .moving_shape_env import MovingShapeVecEnv
+        from .shape_targets import CurriculumConfig, CurriculumState
+        cur_dict = dict(load_moving_config(args.moving_config).get("curriculum", {}))
+        if args.r_max is not None:
+            cur_dict["r_max"] = float(args.r_max)
+        if args.curriculum is not None:           # override config only when explicit
+            cur_dict["enabled"] = bool(args.curriculum)
+        cfg = CurriculumConfig.from_dict(cur_dict)
+        curriculum = CurriculumState(progress=(0.0 if cfg.enabled else 1.0),
+                                     enabled=cfg.enabled, config=cfg)
+        train_env = VecMonitor(MovingShapeVecEnv(
+            args.n_envs,
+            flow_ckpt=args.flow_ckpt, norm_json=args.norm_json,
+            processed_h5=args.processed, device=device, seed=args.seed,
+            curriculum=curriculum, n_particles=args.n_particles,
+            episode_length=args.episode_length, action_scale=args.action_scale,
+            distgen_drift_std=args.distgen_drift_std,
+            scale=args.shape_scale,
+        ))
+    else:
+        train_env = VecMonitor(FlowSurrogateVecEnv(
+            args.n_envs,
+            flow_ckpt=args.flow_ckpt,
+            norm_json=args.norm_json,
+            processed_h5=args.processed,
+            property=args.property,
+            reward_mode=args.reward_mode,
+            target=args.target,
+            n_particles=args.n_particles,
+            device=device,
+            seed=args.seed,
+            episode_length=args.episode_length,
+            action_scale=args.action_scale,
+            distgen_drift_std=args.distgen_drift_std,
+            shape_aspect=args.shape_aspect,
+            shape_tilt_deg=args.shape_tilt_deg,
+            shape_scale=args.shape_scale,
+        ))
 
     tb_dir = str(out_dir / "tb")
     model = PPO(
@@ -130,6 +173,8 @@ def train(args: argparse.Namespace) -> dict:
     model.set_logger(configure_logger(run_dir, ["stdout", "tensorboard", "csv"]))
 
     callbacks: list = []
+    if curriculum is not None and curriculum.enabled:
+        callbacks.append(CurriculumCallback(curriculum, args.total_timesteps))
     if args.ckpt_freq > 0:
         (out_dir / "ckpts").mkdir(exist_ok=True)
         callbacks.append(CheckpointCallback(

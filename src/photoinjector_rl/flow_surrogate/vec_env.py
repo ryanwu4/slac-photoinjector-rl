@@ -67,26 +67,28 @@ class FlowSurrogateVecEnv(VecEnv):
         distgen_drift_std: float = 0.0,
         terminal_emit_bonus: float = 0.0,
         stochastic_init: bool = True,
+        shape_aspect: float | None = None,
+        shape_tilt_deg: float = 0.0,
+        shape_scale: float = 0.3,
     ):
         self.device = torch.device(device)
         self._terminal_emit_bonus = float(terminal_emit_bonus)
-        self._env = FlowBunchEnv(
-            num_envs=int(n_envs),
-            device=self.device,
-            seed=int(seed),
-            episode_length=int(episode_length),
-            stochastic_init=bool(stochastic_init),
-            no_grad=True,
-            flow_ckpt=flow_ckpt,
-            norm_json=norm_json,
-            processed_h5=processed_h5,
-            property=property,
-            reward_mode=reward_mode,
-            target=target,
-            n_particles=int(n_particles),
-            action_scale=float(action_scale),
-            distgen_drift_std=float(distgen_drift_std),
+        common = dict(
+            num_envs=int(n_envs), device=self.device, seed=int(seed),
+            episode_length=int(episode_length), stochastic_init=bool(stochastic_init),
+            no_grad=True, flow_ckpt=flow_ckpt, norm_json=norm_json,
+            processed_h5=processed_h5, n_particles=int(n_particles),
+            action_scale=float(action_scale), distgen_drift_std=float(distgen_drift_std),
         )
+        if shape_aspect is not None:
+            from .shape_env import ShapeTargetEnv
+            self._env = ShapeTargetEnv(
+                target_aspect=float(shape_aspect),
+                target_tilt_deg=float(shape_tilt_deg),
+                scale=float(shape_scale), **common)
+        else:
+            self._env = FlowBunchEnv(
+                property=property, reward_mode=reward_mode, target=target, **common)
 
         observation_space = spaces.Box(
             low=np.array([0.0] * N_KNOB + [-np.inf], dtype=np.float32),
@@ -126,9 +128,14 @@ class FlowSurrogateVecEnv(VecEnv):
         knobs_norm = pre[:, :N_KNOB]
         knobs_phys = _KNOB_LO + knobs_norm * _KNOB_RANGE
         y_norm = pre[:, -1]
-        emit_m2 = self._to_np(
-            self._env.physical_emit(info["obs_before_reset"][:, -1])
-        )
+        # emit_m2 is a diagnostic only (PPO trains on reward/obs/done). Shape-
+        # target envs (ShapeTargetSpec) carry a tracking error in obs[-1], not an
+        # invertible property, so skip the inversion there.
+        if hasattr(getattr(self._env, "_reward_spec", None), "invert"):
+            emit_m2 = self._to_np(
+                self._env.physical_emit(info["obs_before_reset"][:, -1]))
+        else:
+            emit_m2 = np.full(self.num_envs, np.nan, dtype=np.float32)
 
         if self._terminal_emit_bonus > 0.0:
             rewards = rewards + dones.astype(np.float32) * (
