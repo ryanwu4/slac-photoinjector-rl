@@ -1,0 +1,52 @@
+strict: False
+dump_file: dump_smoke.yaml
+
+stopping_condition:
+    name: MaxEvaluationsCondition
+    max_evaluations: 8
+
+generator:
+    name: latin_hypercube
+    batch_size: 8
+    scramble: True
+    optimization: random-cd
+    strength: 1
+    seed: 42
+
+evaluator:
+    function: photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen
+    max_workers: 48
+    vectorized: False
+    function_kwargs:
+        workdir: ./workdir
+        impact_config: configs/impact/ImpactT_config.yaml
+        distgen_input_file: configs/impact/distgen_template.yaml
+        archive_path: ./archives/smoke
+
+vocs:
+    variables:
+        SOL10111:solenoid_field_scale: [-0.32, -0.2]
+        CQ10121:b1_gradient: [-0.2, 0.2]
+        SQ10122:b1_gradient: [-0.2, 0.2]
+        GUNF:rf_field_scale: [46960818.3433, 53086142.475]
+        GUNF:theta0_deg: [-70, -58]
+        distgen:r_dist:sigma_xy:value: [1, 2.5]
+        distgen:r_dist:truncation_radius:value: [2, 3.5]
+        distgen:start:MTE:value: [100, 1000]
+        distgen:t_dist:sigma_t:value: [0.8, 1.5]
+        distgen:transforms:s1:scale: [0.6, 1.4]
+        distgen:transforms:r1:angle:value: [-90, 90]
+
+    objectives: {end_norm_emit_x: MINIMIZE}
+    constraints:
+        end_n_particle_loss: [LESS_THAN, 500]
+        xopt_error: [LESS_THAN, 1]
+
+    constants:
+        distgen:total_charge: 500
+        distgen:n_particle: 2000
+        header:Nx: 8
+        header:Ny: 8
+        header:Nz: 8
+        numprocs: 1
+        stop_1:s: 0.95
