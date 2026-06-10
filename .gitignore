@@ -1,17 +1,15 @@
 # Artifact / data dirs are anchored to the repo root (leading /) so that code
 # dirs like scripts/figures/ are NOT ignored.
 /workdir/
-# legacy artifact dirs (kept until the old tree is drained, then removed)
-/archives/
-/processed/
-/plots/
-/trained/
-/logs/
-# restructured artifact layout
+# raw archives (symlink) + processed tensors
 /data/
+# surrogate checkpoints
 /models/
+# per-run RL outputs
 /runs/
+# cross-run aggregates
 /results/
+# final plots / animations
 /figures/
 /lightning_logs/
 dump*.yaml
