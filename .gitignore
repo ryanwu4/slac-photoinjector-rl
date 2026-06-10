@@ -1,11 +1,19 @@
-workdir/
-archives/
-processed/
-plots/
-figures/
-trained/
-logs/
-lightning_logs/
+# Artifact / data dirs are anchored to the repo root (leading /) so that code
+# dirs like scripts/figures/ are NOT ignored.
+/workdir/
+# legacy artifact dirs (kept until the old tree is drained, then removed)
+/archives/
+/processed/
+/plots/
+/trained/
+/logs/
+# restructured artifact layout
+/data/
+/models/
+/runs/
+/results/
+/figures/
+/lightning_logs/
 dump*.yaml
 __pycache__/
 *.egg-info/
