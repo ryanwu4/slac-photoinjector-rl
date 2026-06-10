@@ -26,8 +26,8 @@ import torch
 from gymnasium import spaces
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
-from photoinjector_rl.surrogates.mlp import SETTING_BOUNDS, SETTING_KEYS
-from photoinjector_rl.surrogates.mlp.diff_env import ACTION_DIM, N_KNOB, OBS_DIM
+from photoinjector_rl.core.settings import SETTING_BOUNDS, SETTING_KEYS
+from photoinjector_rl.core.diff_env import ACTION_DIM, N_KNOB, OBS_DIM
 
 from .diff_env import FlowBunchEnv
 

@@ -3,13 +3,13 @@ Differentiable batched env whose reward is a property COMPUTED from the flow's
 sampled output bunch — the substrate for first-order MBRL over arbitrary beam
 properties.
 
-It subclasses `emittance_target.diff_env.DiffPhotoinjectorEnv` and overrides only
+It subclasses `core.diff_env.DiffPhotoinjectorEnv` and overrides only
 the reward seam (`_forward_surrogate`): instead of a scalar-MLP call, it samples a
 cloud from the conditional flow, computes a (differentiable) property, and z-scores
 it to `y_norm` (env reward = -y_norm, inherited). All graph management — detached
 `initialize_trajectory`, `torch.where` partial-reset grad-safety, frozen-but-
 differentiable surrogate, `obs_before_reset` — is inherited unchanged, so the env
-plugs into `emittance_target.diffrl.{SHAC,BPTT}` exactly like the v1 env.
+plugs into `photoinjector_rl.diffrl.{SHAC,BPTT}` exactly like the v1 env.
 
 Gradient path (per step, no torch.no_grad): action -> knobs (clamp) ->
 flow.condition_net -> reparameterized sample (z ~ N(0,I) constant) -> de-standardize
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import torch
 
-from photoinjector_rl.surrogates.mlp.diff_env import DiffPhotoinjectorEnv
+from photoinjector_rl.core.diff_env import DiffPhotoinjectorEnv
 
 from .model import ConditionalAffineFlow
 from .properties import RewardSpec, build_reward_spec

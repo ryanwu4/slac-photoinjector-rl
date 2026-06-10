@@ -21,13 +21,7 @@ import numpy as np
 from beamphysics import ParticleGroup
 
 from . import SETTING_BOUNDS, SETTING_KEYS
-
-
-def extract_settings(h5: h5py.File) -> np.ndarray:
-    """11 settings in the order locked in __init__.SETTING_KEYS."""
-    attrs = h5["settings"].attrs
-    return np.array([float(np.asarray(attrs[k]).item()) for k in SETTING_KEYS],
-                    dtype=np.float32)
+from photoinjector_rl.core.preprocess import extract_settings  # noqa: F401  (re-exported)
 
 
 def parse_one(path: str, min_terminal_particles: int = 1500) -> dict | None:

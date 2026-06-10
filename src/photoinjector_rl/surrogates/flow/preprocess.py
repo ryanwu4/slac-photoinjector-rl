@@ -32,7 +32,7 @@ from beamphysics import ParticleGroup
 
 from . import COORD_KEYS, DEFAULT_P, ELECTRON_MC2_EV, SETTING_BOUNDS, SETTING_KEYS
 # Reuse the v1 settings reader so the 11-knob column order stays identical.
-from photoinjector_rl.surrogates.mlp.preprocess import extract_settings
+from photoinjector_rl.core.preprocess import extract_settings
 
 PR10241_PATH = "impact/output/particles/PR10241/electron"
 # Cap on the number of pooled macroparticles used to fit the StandardScaler.

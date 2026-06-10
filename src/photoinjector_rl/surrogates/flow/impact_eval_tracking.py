@@ -36,7 +36,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from photoinjector_rl.surrogates.mlp import SETTING_BOUNDS, SETTING_KEYS
+from photoinjector_rl.core.settings import SETTING_BOUNDS, SETTING_KEYS
 from photoinjector_rl.impact.impact_env import DEFAULT_LHS_CONSTANTS
 
 from . import properties
