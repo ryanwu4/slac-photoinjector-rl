@@ -18,7 +18,7 @@ case "$CONFIG" in
     *)            SUBDIR=other ;;
 esac
 
-mkdir -p workdir "archives/${SUBDIR}"
+mkdir -p workdir "data/archives/${SUBDIR}"
 
 # --oversubscribe lets the master share a core with a worker; harmless because
 # the master is lightweight. Default (49 ranks on 64 physical cores) is well

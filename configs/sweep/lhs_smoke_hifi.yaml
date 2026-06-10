@@ -17,14 +17,14 @@ generator:
     seed: 42
 
 evaluator:
-    function: photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen
+    function: photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen
     max_workers: 8
     vectorized: False
     function_kwargs:
         workdir: ./workdir
         impact_config: configs/impact/ImpactT_config.yaml
         distgen_input_file: configs/impact/distgen_template.yaml
-        archive_path: ./archives/smoke_hifi
+        archive_path: ./data/archives/smoke_hifi
 
 vocs:
     variables:

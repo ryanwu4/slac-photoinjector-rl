@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import torch
 
-from photoinjector_rl.emittance_target.env import (
+from photoinjector_rl.surrogates.mlp.env import (
     N_DISTGEN,
     N_KNOB,
     PhotoinjectorEnv,
@@ -258,7 +258,7 @@ def test_terminal_emit_bonus_only_affects_last_step(constant_surrogate) -> None:
 def test_invalid_cuda_index_in_resolve_device() -> None:
     """Asking for a device past torch.cuda.device_count() exits with a message."""
     import torch
-    from photoinjector_rl.emittance_target.train_ppo import resolve_device
+    from photoinjector_rl.surrogates.mlp.train_ppo import resolve_device
 
     # cpu always resolves.
     assert resolve_device("cpu") == "cpu"

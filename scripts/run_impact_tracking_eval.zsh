@@ -7,8 +7,8 @@
 # single rollout is ~65 Impact-T jobs run back-to-back (inherently sequential).
 # The combinations are independent, so they fan out in parallel.
 #
-#   models       : shac (logs/move_shac/seed0), bptt (logs/move_bptt/seed0),
-#                  ppo (logs/move_ppo)            -> --<algo> <run_dir>
+#   models       : shac (runs/move_shac/seed0), bptt (runs/move_bptt/seed0),
+#                  ppo (runs/move_ppo)            -> --<algo> <run_dir>
 #   trajectories : staircase, tilt_rotation, aspect_ramp   (held-out schedules)
 #   fidelity     : lofi (2k particles, 8^3 mesh, ~9 s/run -> ~10 min/rollout)
 #                  hifi (20k particles, 32^3 mesh, ~35 s/run -> ~40 min/rollout)
@@ -19,8 +19,8 @@
 #
 # Outputs (uniquely named per algo_traj_fidelity, no collisions):
 #   figures/impact_tracking_<algo>_<traj>_<fid>.{png,json}
-#   logs/impact_eval/<algo>_<traj>_<fid>/rollout.npz   (+ live rollout.partial.npz)
-#   logs/impact_eval_<algo>_<traj>_<fid>.log           (per-run console)
+#   runs/impact_eval/<algo>_<traj>_<fid>/rollout.npz   (+ live rollout.partial.npz)
+#   runs/impact_eval/impact_eval_<algo>_<traj>_<fid>.log           (per-run console)
 #
 # Usage:
 #   ./scripts/run_impact_tracking_eval.zsh                 # lofi then hifi (9+9 parallel)
@@ -34,10 +34,10 @@
 set -o pipefail
 
 # --- config -----------------------------------------------------------------
-REPO=/home/rwu4/photoinjector-rl/photoinjector-rl-clean
+REPO=${0:A:h:h}
 PY=/home/rwu4/miniconda3/envs/slac-rl/bin/python
-CKPT="trained/flow_surrogate/checkpoints/best-epoch=493-val_loss=-0.9555.ckpt"
-NORM=processed/flow_surrogate_norm.json
+CKPT="models/flow_surrogate/checkpoints/best-epoch=493-val_loss=-0.9555.ckpt"
+NORM=data/processed/flow_surrogate_norm.json
 
 export IMPACTT_BIN=/home/rwu4/miniconda3/envs/slac-rl/bin/ImpactTexe
 export OMP_NUM_THREADS=1        # one thread per process -> no CPU oversubscription
@@ -45,9 +45,9 @@ export PYTHONPATH=$REPO/src
 
 # model label -> policy run dir (the CLI flag is --<label>)
 typeset -A MODELS=(
-  shac logs/move_shac/seed0
-  bptt logs/move_bptt/seed0
-  ppo  logs/move_ppo
+  shac runs/move_shac/seed0
+  bptt runs/move_bptt/seed0
+  ppo  runs/move_ppo
 )
 TRAJS=(staircase tilt_rotation aspect_ramp)
 
@@ -68,7 +68,7 @@ while (( $# )); do
 done
 
 cd $REPO || { print -u2 "cannot cd $REPO"; exit 1; }
-mkdir -p logs figures logs/impact_eval
+mkdir -p runs figures runs/impact_eval
 
 # --- one fidelity phase: fan out all models x trajectories ------------------
 run_phase () {
@@ -78,9 +78,9 @@ run_phase () {
   print "=== $fid phase: launching ${#MODELS} models x ${#TRAJS} trajectories ==="
   for algo dir in ${(kv)MODELS}; do
     for traj in $TRAJS; do
-      local log="logs/impact_eval_${algo}_${traj}_${fid}.log"
+      local log="runs/impact_eval/impact_eval_${algo}_${traj}_${fid}.log"
       local -a cmd=(
-        $PY -m photoinjector_rl.flow_surrogate.impact_eval_tracking
+        $PY -m photoinjector_rl.surrogates.flow.impact_eval_tracking
         --flow-ckpt "$CKPT" --norm-json "$NORM"
         --$algo "$dir" --which-traj "$traj" --fidelity "$fid"
         --episode-length $EPISODE
@@ -102,7 +102,7 @@ run_phase () {
     if wait $pids[$i]; then
       print "  [ok]   $labels[$i]"
     else
-      print "  [FAIL] $labels[$i]  (tail logs/impact_eval_$labels[$i].log)"
+      print "  [FAIL] $labels[$i]  (tail runs/impact_eval/impact_eval_$labels[$i].log)"
       (( fail++ ))
     fi
   done

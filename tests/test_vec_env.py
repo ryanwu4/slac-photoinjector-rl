@@ -21,12 +21,12 @@ from __future__ import annotations
 import numpy as np
 from stable_baselines3.common.vec_env import VecMonitor
 
-from photoinjector_rl.emittance_target.diff_env import (
+from photoinjector_rl.surrogates.mlp.diff_env import (
     ACTION_DIM,
     N_KNOB,
     OBS_DIM,
 )
-from photoinjector_rl.emittance_target.vec_env import SurrogateVecEnv
+from photoinjector_rl.surrogates.mlp.vec_env import SurrogateVecEnv
 
 
 def _make(checkpoint_path, norm_json_path, *, n_envs=4, episode_length=8):

@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 import torch
 
-from photoinjector_rl.emittance_target import N_INPUT, SETTING_BOUNDS, SETTING_KEYS
-from photoinjector_rl.emittance_target.dataset import (
+from photoinjector_rl.surrogates.mlp import N_INPUT, SETTING_BOUNDS, SETTING_KEYS
+from photoinjector_rl.surrogates.mlp.dataset import (
     _normalize_settings,
     _normalize_target,
     denormalize_target,

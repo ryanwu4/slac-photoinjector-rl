@@ -19,10 +19,10 @@ import pytest
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CHECKPOINT_GLOB = "trained/emittance_target_hifi/checkpoints/best-*.ckpt"
-NORM_JSON_PATH = "processed/emittance_target_hifi_norm.json"
-FLOW_CHECKPOINT_GLOB = "trained/flow_surrogate/checkpoints/best-*.ckpt"
-FLOW_NORM_JSON_PATH = "processed/flow_surrogate_norm.json"
+CHECKPOINT_GLOB = "models/emittance_target_hifi/checkpoints/best-*.ckpt"
+NORM_JSON_PATH = "data/processed/emittance_target_hifi_norm.json"
+FLOW_CHECKPOINT_GLOB = "models/flow_surrogate/checkpoints/best-*.ckpt"
+FLOW_NORM_JSON_PATH = "data/processed/flow_surrogate_norm.json"
 
 
 @pytest.fixture(scope="session")
@@ -36,7 +36,7 @@ def checkpoint_path(repo_root: Path) -> Path:
     matches = sorted(glob.glob(str(repo_root / CHECKPOINT_GLOB)))
     if not matches:
         pytest.skip(f"no checkpoint matching {CHECKPOINT_GLOB} -- "
-                    "train one with `python -m photoinjector_rl.emittance_target.train`")
+                    "train one with `python -m photoinjector_rl.surrogates.mlp.train`")
     return Path(matches[-1])
 
 
@@ -46,14 +46,14 @@ def norm_json_path(repo_root: Path) -> Path:
     p = repo_root / NORM_JSON_PATH
     if not p.exists():
         pytest.skip(f"missing {NORM_JSON_PATH} -- "
-                    "run `python -m photoinjector_rl.emittance_target.preprocess`")
+                    "run `python -m photoinjector_rl.surrogates.mlp.preprocess`")
     return p
 
 
 @pytest.fixture(scope="session")
 def loaded_model(checkpoint_path: Path):
     """Real EmittanceMLP loaded from disk."""
-    from photoinjector_rl.emittance_target.model import EmittanceMLP
+    from photoinjector_rl.surrogates.mlp.model import EmittanceMLP
 
     model = EmittanceMLP.load_from_checkpoint(str(checkpoint_path), map_location="cpu")
     model.eval()
@@ -76,7 +76,7 @@ def flow_checkpoint_path(repo_root: Path) -> Path:
     matches = sorted(glob.glob(str(repo_root / FLOW_CHECKPOINT_GLOB)))
     if not matches:
         pytest.skip(f"no checkpoint matching {FLOW_CHECKPOINT_GLOB} -- "
-                    "train one with `python -m photoinjector_rl.flow_surrogate.train`")
+                    "train one with `python -m photoinjector_rl.surrogates.flow.train`")
     return Path(matches[-1])
 
 
@@ -86,14 +86,14 @@ def flow_norm_json_path(repo_root: Path) -> Path:
     p = repo_root / FLOW_NORM_JSON_PATH
     if not p.exists():
         pytest.skip(f"missing {FLOW_NORM_JSON_PATH} -- "
-                    "run `python -m photoinjector_rl.flow_surrogate.preprocess`")
+                    "run `python -m photoinjector_rl.surrogates.flow.preprocess`")
     return p
 
 
 @pytest.fixture(scope="session")
 def loaded_flow(flow_checkpoint_path: Path):
     """Real ConditionalAffineFlow loaded from disk."""
-    from photoinjector_rl.flow_surrogate.model import ConditionalAffineFlow
+    from photoinjector_rl.surrogates.flow.model import ConditionalAffineFlow
 
     model = ConditionalAffineFlow.load_from_checkpoint(
         str(flow_checkpoint_path), map_location="cpu")

@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from photoinjector_rl.flow_surrogate import N_INPUT
-from photoinjector_rl.flow_surrogate.model import (
+from photoinjector_rl.surrogates.flow import N_INPUT
+from photoinjector_rl.surrogates.flow.model import (
     ConditionalAffineFlow,
     compute_emittance_torch,
 )

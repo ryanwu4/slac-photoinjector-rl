@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import torch
 
-from photoinjector_rl.flow_surrogate import N_INPUT
-from photoinjector_rl.flow_surrogate.model import ConditionalAffineFlow
-from photoinjector_rl.flow_surrogate.diff_env import FlowBunchEnv
-from photoinjector_rl.flow_surrogate.properties import PROPERTY_REGISTRY, RewardSpec
+from photoinjector_rl.surrogates.flow import N_INPUT
+from photoinjector_rl.surrogates.flow.model import ConditionalAffineFlow
+from photoinjector_rl.surrogates.flow.diff_env import FlowBunchEnv
+from photoinjector_rl.surrogates.flow.properties import PROPERTY_REGISTRY, RewardSpec
 
 DEV = "cpu"
 
@@ -142,9 +142,9 @@ def test_aspect_ratio_target_env_differentiable() -> None:
     Data-gated on the processed dataset (needed for the non-emittance z-score)."""
     import os
     import pytest
-    proc = "processed/flow_surrogate.h5"
+    proc = "data/processed/flow_surrogate.h5"
     if not os.path.exists(proc):
-        pytest.skip("processed/flow_surrogate.h5 absent")
+        pytest.skip("data/processed/flow_surrogate.h5 absent")
     env = FlowBunchEnv(num_envs=4, device=DEV, seed=0, episode_length=4, no_grad=False,
                        flow=_tiny_flow(), processed_h5=proc, property="aspect_ratio",
                        reward_mode="target", target=1.5, n_particles=64)
@@ -182,7 +182,7 @@ def test_norm_emit_4d_matches_flow_forward() -> None:
 
 def test_shac_smoke_runs(tmp_path) -> None:
     from functools import partial
-    from photoinjector_rl.emittance_target.diffrl import SHAC
+    from photoinjector_rl.diffrl import SHAC
 
     flow = _tiny_flow()
     env_fn = partial(FlowBunchEnv, flow=flow, property="norm_emit_4d", n_particles=32)
@@ -231,14 +231,14 @@ def _tilted_cloud(aspect: float, tilt_deg: float, n: int = 20000) -> torch.Tenso
 
 
 def test_shape_helpers_recover_known_cloud() -> None:
-    from photoinjector_rl.flow_surrogate import properties as P
+    from photoinjector_rl.surrogates.flow import properties as P
     parts = _tilted_cloud(3.0, 30.0)
     assert abs(P._eigen_aspect(parts).item() - 3.0) < 0.15
     assert abs(P._tilt_angle_deg(parts).item() - 30.0) < 2.0
 
 
 def test_aspect_tilt_s_roundtrip() -> None:
-    from photoinjector_rl.flow_surrogate import properties as P
+    from photoinjector_rl.surrogates.flow import properties as P
     for a, t in [(2.0, 30.0), (3.0, -45.0), (1.5, 80.0)]:
         s1, s2 = P.aspect_tilt_to_s(a, t)
         aa, tt = P.s_to_aspect_tilt(torch.tensor([s1]), torch.tensor([s2]))
@@ -246,14 +246,14 @@ def test_aspect_tilt_s_roundtrip() -> None:
 
 
 def test_s1_s2_differentiable() -> None:
-    from photoinjector_rl.flow_surrogate import properties as P
+    from photoinjector_rl.surrogates.flow import properties as P
     parts = _tilted_cloud(2.0, 20.0).float().requires_grad_(True)
     (P._s1(parts).sum() + P._s2(parts).sum()).backward()
     assert parts.grad is not None and parts.grad.abs().sum() > 0
 
 
 def test_shape_target_spec_zero_at_target() -> None:
-    from photoinjector_rl.flow_surrogate import properties as P
+    from photoinjector_rl.surrogates.flow import properties as P
     spec = P.ShapeTargetSpec.from_aspect_tilt(3.0, 30.0)
     y = spec.reward_ynorm(_tilted_cloud(3.0, 30.0))
     assert y.item() < 0.05                                   # ~0 at the target
@@ -262,7 +262,7 @@ def test_shape_target_spec_zero_at_target() -> None:
 
 
 def test_shape_target_env_differentiable() -> None:
-    from photoinjector_rl.flow_surrogate.shape_env import ShapeTargetEnv
+    from photoinjector_rl.surrogates.flow.shape_env import ShapeTargetEnv
     env = ShapeTargetEnv(num_envs=4, device=DEV, seed=0, episode_length=4,
                          no_grad=False, flow=_tiny_flow(), n_particles=64,
                          target_aspect=2.0, target_tilt_deg=30.0)
@@ -280,7 +280,7 @@ def test_shape_target_env_differentiable() -> None:
 
 def test_sample_shape_trajectory_shape_and_reachable() -> None:
     import numpy as np
-    from photoinjector_rl.flow_surrogate.shape_targets import (
+    from photoinjector_rl.surrogates.flow.shape_targets import (
         CurriculumConfig, sample_shape_trajectory)
     cfg = CurriculumConfig(r_max=0.7)
     rng = np.random.default_rng(0)
@@ -292,7 +292,7 @@ def test_sample_shape_trajectory_shape_and_reachable() -> None:
 
 def test_curriculum_config_from_dict_and_eval_spec() -> None:
     import numpy as np
-    from photoinjector_rl.flow_surrogate.shape_targets import (
+    from photoinjector_rl.surrogates.flow.shape_targets import (
         CurriculumConfig, build_eval_trajectories)
     cfg = CurriculumConfig.from_dict({"r_max": 0.5, "tilt_turns_hard": 3.0,
                                       "unknown_key": 1})       # unknown ignored
@@ -304,7 +304,7 @@ def test_curriculum_config_from_dict_and_eval_spec() -> None:
 
 def test_curriculum_difficulty_increases_variation() -> None:
     import numpy as np
-    from photoinjector_rl.flow_surrogate.shape_targets import (
+    from photoinjector_rl.surrogates.flow.shape_targets import (
         CurriculumState, sample_shape_trajectory)
     rng = np.random.default_rng(1)
 
@@ -319,7 +319,7 @@ def test_curriculum_difficulty_increases_variation() -> None:
 
 
 def _moving_env(**kw):
-    from photoinjector_rl.flow_surrogate.moving_shape_env import MovingShapeEnv
+    from photoinjector_rl.surrogates.flow.moving_shape_env import MovingShapeEnv
     defaults = dict(num_envs=4, device=DEV, seed=0, episode_length=6,
                     flow=_tiny_flow(), n_particles=64, scale=0.3)
     defaults.update(kw)
@@ -339,7 +339,7 @@ def test_moving_shape_obs_layout_and_dim() -> None:
 
 def test_moving_shape_target_advances_with_step_count() -> None:
     import numpy as np
-    from photoinjector_rl.flow_surrogate.shape_targets import eval_aspect_ramp
+    from photoinjector_rl.surrogates.flow.shape_targets import eval_aspect_ramp
     T = 6
     traj = eval_aspect_ramp(T, tilt_deg=10.0, a0=1.5, a1=3.0)   # strictly varying r
     env = _moving_env(num_envs=3, episode_length=T + 4, no_grad=True,

@@ -2,7 +2,7 @@
 Tests for the PolicyAdapter abstraction added to compare_n_impact.py.
 
 The diffrl-adapter tests hit real saved checkpoints under
-`logs/compare_diff/{shac,bptt}/seed_0/final_policy.pt`; they auto-skip when
+`runs/compare_diff/{shac,bptt}/seed_0/final_policy.pt`; they auto-skip when
 those files are absent (fresh clone / CI).
 """
 # pyright: reportPrivateImportUsage=false
@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from photoinjector_rl.emittance_target.compare_n_impact import (
+from photoinjector_rl.surrogates.mlp.compare_n_impact import (
     DiffRLAdapter,
     SB3Adapter,
     _load_adapter,
@@ -47,7 +47,7 @@ def test_load_adapter_rejects_unknown_suffix():
 
 
 def test_diffrl_adapter_shac_predict():
-    p = _maybe_path(REPO_ROOT / "logs" / "compare_diff" / "shac" / "seed_0"
+    p = _maybe_path(REPO_ROOT / "runs" / "compare_diff" / "shac" / "seed_0"
                     / "final_policy.pt")
     adapter = DiffRLAdapter(str(p))
     obs = np.zeros(6, dtype=np.float32)
@@ -60,7 +60,7 @@ def test_diffrl_adapter_shac_predict():
 
 
 def test_diffrl_adapter_bptt_predict():
-    p = _maybe_path(REPO_ROOT / "logs" / "compare_diff" / "bptt" / "seed_0"
+    p = _maybe_path(REPO_ROOT / "runs" / "compare_diff" / "bptt" / "seed_0"
                     / "final_policy.pt")
     adapter = DiffRLAdapter(str(p))
     obs = np.zeros(6, dtype=np.float32)
@@ -71,7 +71,7 @@ def test_diffrl_adapter_bptt_predict():
 
 
 def test_diffrl_adapter_deterministic_is_deterministic():
-    p = _maybe_path(REPO_ROOT / "logs" / "compare_diff" / "bptt" / "seed_0"
+    p = _maybe_path(REPO_ROOT / "runs" / "compare_diff" / "bptt" / "seed_0"
                     / "final_policy.pt")
     adapter = DiffRLAdapter(str(p))
     obs = np.array([0.3, 0.4, 0.5, 0.6, 0.7, -0.1], dtype=np.float32)
@@ -86,7 +86,7 @@ def test_diffrl_adapter_accepts_2d_obs_batch():
     the multiprocessing pool (it passes one obs at a time) but the path
     should at least not crash.
     """
-    p = _maybe_path(REPO_ROOT / "logs" / "compare_diff" / "shac" / "seed_0"
+    p = _maybe_path(REPO_ROOT / "runs" / "compare_diff" / "shac" / "seed_0"
                     / "final_policy.pt")
     adapter = DiffRLAdapter(str(p))
     obs = np.zeros((1, 6), dtype=np.float32)

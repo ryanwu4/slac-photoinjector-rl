@@ -3,9 +3,9 @@
 # the EmittanceMLP surrogate end-to-end.
 #
 # Stages:
-#   1. LHS sweep         -> archives/train_hifi/*.h5         (resumable)
-#   2. Preprocess        -> processed/emittance_target_hifi.h5 + _norm.json
-#   3. Surrogate train   -> trained/emittance_target_hifi/checkpoints/best-*.ckpt
+#   1. LHS sweep         -> data/archives/train_hifi/*.h5         (resumable)
+#   2. Preprocess        -> data/processed/emittance_target_hifi.h5 + _norm.json
+#   3. Surrogate train   -> models/emittance_target_hifi/checkpoints/best-*.ckpt
 #
 # Step 4 (BPTT/SHAC/PPO comparison) is intentionally NOT in this script -- run
 # compare_diff_algos.py manually after eyeballing the val_pred_vs_true plot.
@@ -18,10 +18,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SWEEP_CONFIG="configs/sweep/lhs_train_hifi.yaml"
-ARCHIVE_DIR="archives/train_hifi"
-PROCESSED_H5="processed/emittance_target_hifi.h5"
-PROCESSED_NORM="processed/emittance_target_hifi_norm.json"
-TRAIN_OUT="trained/emittance_target_hifi"
+ARCHIVE_DIR="data/archives/train_hifi"
+PROCESSED_H5="data/processed/emittance_target_hifi.h5"
+PROCESSED_NORM="data/processed/emittance_target_hifi_norm.json"
+TRAIN_OUT="models/emittance_target_hifi"
 EXPECTED_ARCHIVES=10000
 
 SKIP_SWEEP=0
@@ -34,7 +34,7 @@ usage() {
     cat <<EOF
 Usage: scripts/regen_hifi.sh [flags]
 
-  --skip-sweep         skip the LHS sweep (use existing archives/train_hifi/*.h5)
+  --skip-sweep         skip the LHS sweep (use existing data/archives/train_hifi/*.h5)
   --force-sweep        re-run sweep even if archive count >= ${EXPECTED_ARCHIVES}
   --force-preprocess   re-run preprocess even if ${PROCESSED_H5} exists
   --force-train        re-run training even if ${TRAIN_OUT}/final_metrics.json exists
@@ -165,7 +165,7 @@ if [[ "$FORCE_PREPROCESS" -ne 1 && -f "$PROCESSED_H5" ]]; then
     echo "[preprocess] ${PROCESSED_H5} exists; skipping (--force-preprocess to override)"
 else
     echo "[preprocess] building ${PROCESSED_H5} from ${ARCHIVE_DIR}/*.h5"
-    python -m photoinjector_rl.emittance_target.preprocess \
+    python -m photoinjector_rl.surrogates.mlp.preprocess \
         --archives "${ARCHIVE_DIR}/*.h5" \
         --out "$PROCESSED_H5"
 fi
@@ -185,7 +185,7 @@ else
     # DDP on this box, which deadlocks a small MLP run on the log_dir broadcast
     # (NCCL watchdog kills it after ~30 min). The MLP is tiny -- single device
     # is faster anyway.
-    python -m photoinjector_rl.emittance_target.train \
+    python -m photoinjector_rl.surrogates.mlp.train \
         --processed "$PROCESSED_H5" \
         --out-dir "$TRAIN_OUT" \
         --devices 1
@@ -216,10 +216,10 @@ cat <<EOF
 
 Next step (manual): run the BPTT/SHAC/PPO comparison against this surrogate.
 
-  python -m photoinjector_rl.emittance_target.compare_diff_algos \
+  python -m photoinjector_rl.surrogates.mlp.compare_diff_algos \
       --ckpt "${BEST_CKPT}" \
       --norm-json ${PROCESSED_NORM} \
-      --out-dir logs/compare_diff_hifi \
+      --out-dir runs/compare_diff_hifi \
       --algos ppo,shac,bptt \
       --seeds 0,1,2 \
       --budget 500000 \

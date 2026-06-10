@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import torch
 
-from photoinjector_rl.emittance_target.diff_env import (
+from photoinjector_rl.surrogates.mlp.diff_env import (
     ACTION_DIM,
     OBS_DIM,
     DiffPhotoinjectorEnv,

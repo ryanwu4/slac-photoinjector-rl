@@ -17,7 +17,7 @@ import math
 import numpy as np
 import pytest
 
-from photoinjector_rl.emittance_target.impact_env import (
+from photoinjector_rl.impact.impact_env import (
     ImpactPhotoinjectorEnv,
     _extract_norm_emit_4d,
 )
@@ -92,7 +92,7 @@ def test_reset_runs_one_impact_call_and_returns_obs(monkeypatch) -> None:
         return _fake_evaluate(settings, **kwargs)
 
     monkeypatch.setattr(
-        "photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen",
+        "photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen",
         fake,
     )
 
@@ -119,7 +119,7 @@ def test_reset_runs_one_impact_call_and_returns_obs(monkeypatch) -> None:
 
 def test_step_runs_one_impact_call(monkeypatch) -> None:
     monkeypatch.setattr(
-        "photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen",
+        "photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen",
         _fake_evaluate,
     )
     env = _make_env(max_steps=4)
@@ -134,7 +134,7 @@ def test_step_runs_one_impact_call(monkeypatch) -> None:
 
 def test_max_steps_truncates(monkeypatch) -> None:
     monkeypatch.setattr(
-        "photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen",
+        "photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen",
         _fake_evaluate,
     )
     env = _make_env(max_steps=3)
@@ -151,7 +151,7 @@ def test_failure_path_returns_penalty_and_counts(monkeypatch) -> None:
         raise RuntimeError("Impact-T blew up at extreme knobs")
 
     monkeypatch.setattr(
-        "photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen",
+        "photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen",
         fake_that_fails,
     )
 
@@ -174,7 +174,7 @@ def test_non_finite_emit_treated_as_failure(monkeypatch) -> None:
         return {"norm_emit_4d": float("nan"), "error": False, "fingerprint": "x"}
 
     monkeypatch.setattr(
-        "photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen",
+        "photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen",
         fake_nan,
     )
     env = _make_env(failure_penalty_sigma=5.0)
@@ -188,7 +188,7 @@ def test_zero_emit_treated_as_failure(monkeypatch) -> None:
         return {"norm_emit_4d": 0.0, "error": False, "fingerprint": "x"}
 
     monkeypatch.setattr(
-        "photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen",
+        "photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen",
         fake_zero,
     )
     env = _make_env()
@@ -202,8 +202,8 @@ def test_settings_dict_has_correct_keys_and_ranges(monkeypatch) -> None:
     values must lie in their physical bounds. The fidelity constants from
     DEFAULT_LHS_CONSTANTS must also be merged in so the env matches the
     surrogate's training fidelity."""
-    from photoinjector_rl.emittance_target import SETTING_BOUNDS, SETTING_KEYS
-    from photoinjector_rl.emittance_target.impact_env import DEFAULT_LHS_CONSTANTS
+    from photoinjector_rl.surrogates.mlp import SETTING_BOUNDS, SETTING_KEYS
+    from photoinjector_rl.impact.impact_env import DEFAULT_LHS_CONSTANTS
 
     captured = {}
 
@@ -212,7 +212,7 @@ def test_settings_dict_has_correct_keys_and_ranges(monkeypatch) -> None:
         return _fake_evaluate(settings, **kwargs)
 
     monkeypatch.setattr(
-        "photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen",
+        "photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen",
         fake,
     )
 
@@ -243,7 +243,7 @@ def test_constants_override(monkeypatch) -> None:
         return _fake_evaluate(settings, **kwargs)
 
     monkeypatch.setattr(
-        "photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen",
+        "photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen",
         fake,
     )
 
@@ -259,7 +259,7 @@ def test_constants_override(monkeypatch) -> None:
 def test_from_norm_json_loads_stats(tmp_path, monkeypatch) -> None:
     import json
     monkeypatch.setattr(
-        "photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen",
+        "photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen",
         _fake_evaluate,
     )
     norm_path = tmp_path / "norm.json"
@@ -282,7 +282,7 @@ def test_distgen_not_in_observation(monkeypatch) -> None:
     Identical knobs + different distgen should give same first-5 obs
     components."""
     monkeypatch.setattr(
-        "photoinjector_rl.data.evaluate.custom_evaluate_impact_with_distgen",
+        "photoinjector_rl.impact.evaluate.custom_evaluate_impact_with_distgen",
         _fake_evaluate,
     )
     env_a = _make_env()

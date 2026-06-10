@@ -14,79 +14,79 @@ The core is a **3-stage pipeline**:
   ---------------------             --------------------             ---------------------            ----------------
   ImpactT_PR10241.in + distgen      EmittanceMLP (scalar)            SHAC / BPTT (first-order MBRL)    real Impact-T
   11-D LHS (xopt) over knobs   -->  11 knobs -> log10 emit_4d   -->  PPO (model-free baseline)    --> compare_n_impact
-  archives/train   (lofi 2k)        ConditionalAffineFlow            tune 5 control knobs vs a         impact_eval_tracking
-  archives/train_hifi (20k)         11 knobs -> output bunch (P,6)   differentiable bunch property    (sim-to-sim transfer)
+  data/archives/train   (lofi 2k)        ConditionalAffineFlow            tune 5 control knobs vs a         impact_eval_tracking
+  data/archives/train_hifi (20k)         11 knobs -> output bunch (P,6)   differentiable bunch property    (sim-to-sim transfer)
 ```
 
 Two surrogate flavors share one knob convention:
 
-* **`emittance_target/`** — a scalar `EmittanceMLP`: `11 knobs -> log10(norm_emit_4d)`. Fast, deterministic, the v1 reward.
-* **`flow_surrogate/`** — a **conditional affine-coupling normalizing flow**: `11 knobs -> a full PR10241 cloud (P,6)`. Any beam statistic is computed from the sampled cloud and, via the reparameterization trick, its gradient flows back to the knobs — the substrate for first-order MBRL and the goal-conditioned shape controller.
+* **`surrogates/mlp/`** *(LEGACY, kept for provenance)* — a scalar `EmittanceMLP`: `11 knobs -> log10(norm_emit_4d)`. Fast, deterministic, the v1 reward.
+* **`surrogates/flow/`** — a **conditional affine-coupling normalizing flow**: `11 knobs -> a full PR10241 cloud (P,6)`. Any beam statistic is computed from the sampled cloud and, via the reparameterization trick, its gradient flows back to the knobs — the substrate for first-order MBRL and the goal-conditioned shape controller.
 
 RL is done with **SHAC** and **BPTT** (first-order, backprop the reward through
 the frozen surrogate) plus a model-free **PPO** baseline (Stable-Baselines3).
 Across the emittance and shape-tracking tasks, **BPTT and SHAC tie or beat PPO**;
 SHAC needs `target_critic_alpha=0.9–0.95` to stay stable on the stochastic flow
-reward (see `flow_surrogate/README.md` and the notes below).
+reward (see `surrogates/flow/README.md` and the notes below).
 
 ---
 
 ## Repo layout
 
 ```
-photoinjector-rl-clean/
+slac-photoinjector-rl/
 ├── pyproject.toml                  package `photoinjector-rl`; deps + extras
 ├── README.md                       (this file)
 ├── src/photoinjector_rl/
-│   ├── data/                       Impact-T + distgen runner (xopt evaluator
-│   │                               `custom_evaluate_impact_with_distgen`,
-│   │                               archiving, fingerprinting)
-│   ├── emittance_target/           scalar-emittance pipeline (the v1 surrogate)
-│   │   ├── __init__.py             AUTHORITATIVE SETTING_KEYS / SETTING_BOUNDS / N_INPUT=11
-│   │   ├── preprocess.py train.py  archives -> processed h5 -> EmittanceMLP
-│   │   ├── model.py dataset.py     Lightning MLP (11 -> 128³ -> 1) + DataModule
-│   │   ├── env.py impact_env.py    Gymnasium envs (surrogate / real Impact-T)
-│   │   ├── diff_env.py vec_env.py  differentiable + vectorized env wrappers
-│   │   ├── train_{ppo,shac,bptt}.py  RL drivers (surrogate)
-│   │   ├── train_ppo_impact.py     PPO fine-tune on real Impact-T
-│   │   ├── compare_{impact,n_impact,impact_all_algos}.py  Impact-T eval of policies
-│   │   ├── compare_diff_algos.py   surrogate-side PPO/SHAC/BPTT benchmark
-│   │   ├── eval_drift_sweep*.py    eval-time distgen-jitter robustness sweeps
-│   │   └── diffrl/                 reused SHAC/BPTT engine (shac.py, bptt.py,
-│   │                               models.py, utils.py) — auto-sizes actor/critic
-│   │                               from num_obs, so it serves all envs unchanged
-│   └── flow_surrogate/             conditional-flow surrogate + shape controllers
-│       ├── model.py preprocess.py  ConditionalAffineFlow (Lightning) + h5 builder
-│       ├── train.py dataset.py     flow training + FlowDataModule
-│       ├── properties.py           PROPERTY_REGISTRY (emit, sigma, energy,
-│       │                           aspect_ratio, Stokes s1/s2, tilt, ...)
-│       ├── diff_env.py vec_env.py  FlowBunchEnv (differentiable) + vec env
-│       ├── train_{ppo,shac,bptt}.py  RL drivers on the flow surrogate
-│       ├── compare_algos.py        flow-side PPO/SHAC/BPTT benchmark
-│       ├── shape_env.py shape_targets.py   fixed-(aspect,tilt) shape control
-│       ├── moving_shape_env.py moving_shape_cli.py  goal-conditioned MOVING-target
-│       │                                            (aspect,tilt) tracking controller
-│       ├── eval_tracking.py animate_tracking.py     surrogate tracking eval / GIFs
-│       ├── impact_eval_tracking.py plot_impact_summary.py  REAL Impact-T tracking eval
-│       └── README.md               flow surrogate design notes
+│   ├── core/                       shared, surrogate-agnostic layer
+│   │   ├── settings.py             AUTHORITATIVE SETTING_KEYS / SETTING_BOUNDS / N_INPUT=11
+│   │   └── callbacks.py            SB3 training callbacks (shared)
+│   ├── diffrl/                     SHAC/BPTT engine (shac.py, bptt.py, models.py,
+│   │                               utils.py) — auto-sizes actor/critic from num_obs,
+│   │                               so it serves every env unchanged
+│   ├── impact/                     real Impact-T: impact_env.py (Gymnasium env) +
+│   │                               evaluate.py (xopt evaluator + archiving)
+│   ├── surrogates/
+│   │   ├── flow/                   ACTIVE — conditional-flow surrogate + shape controllers
+│   │   │   ├── model.py preprocess.py  ConditionalAffineFlow (Lightning) + h5 builder
+│   │   │   ├── train.py dataset.py     flow training + FlowDataModule
+│   │   │   ├── properties.py           PROPERTY_REGISTRY (emit, sigma, energy,
+│   │   │   │                           aspect_ratio, Stokes s1/s2, tilt, ...)
+│   │   │   ├── diff_env.py vec_env.py  FlowBunchEnv (differentiable) + vec env
+│   │   │   ├── train_{ppo,shac,bptt}.py  RL drivers on the flow surrogate
+│   │   │   ├── compare_algos.py        flow-side PPO/SHAC/BPTT benchmark
+│   │   │   ├── shape_env.py shape_targets.py   fixed-(aspect,tilt) shape control
+│   │   │   ├── moving_shape_env.py moving_shape_cli.py  goal-conditioned MOVING-target
+│   │   │   ├── eval_tracking.py animate_tracking.py     surrogate tracking eval / GIFs
+│   │   │   ├── impact_eval_tracking.py plot_impact_summary.py  REAL Impact-T tracking eval
+│   │   │   └── README.md               flow surrogate design notes
+│   │   └── mlp/                     LEGACY — scalar `EmittanceMLP` (v1); kept for
+│   │                               provenance, not maintained. model/env/dataset +
+│   │                               train_{ppo,shac,bptt}, compare_*, eval_drift_sweep*
+│   └── __init__.py
 ├── configs/
 │   ├── impact/   ImpactT_PR10241.in, ImpactT_config.yaml, distgen_template.yaml, rfdata*
 │   ├── sweep/    lhs_train_hifi.yaml, lhs_smoke_hifi.yaml  (xopt LHS designs)
 │   └── diff_rl/  shac_flow.yaml, bptt_flow.yaml, shac_photoinjector.yaml,
 │                 bptt_photoinjector.yaml, moving_eval.yaml
-├── scripts/      run_sweep_local.sh, regen_hifi.sh, run_diff_smoke.sh,
-│                 run_impact_tracking_eval.zsh, eval_drift_sweep.sh, compare_hifi_drift.sh
+├── scripts/      run_sweep_local.sh, regen_hifi.sh, run_diff_smoke.sh, eval_drift_sweep.sh,
+│   │             compare_hifi_drift.sh, run_impact_tracking_eval.zsh
+│   └── figures/  figure-generation scripts (read runs/results/models, write figures/)
 ├── tests/        ~122 test functions (env / harness / surrogate / diffrl)
-├── archives/     Impact-T sweep outputs: train/ (lofi 2k particles, 8³ mesh),
-│                 train_hifi/ (20k, 32³), smoke_hifi/  — each ~10k *.h5 runs
-├── processed/    preprocessed tensors: emittance_target_hifi.h5, flow_surrogate.h5 (+ *_norm.json)
-├── trained/      surrogate checkpoints: emittance_target_hifi/, flow_surrogate/
-├── logs/         RL run dirs (compare_*, move_*, shape_*, impact_eval, ...)
-└── figures/      result plots / JSON / animations (impact_tracking_*, move_*, shape_demo, ...)
+├── data/
+│   ├── archives/   Impact-T sweep outputs (SYMLINK, 47 GB): train/ (lofi 2k, 8³ mesh),
+│   │               train_hifi/ (20k, 32³), smoke_hifi/  — each ~10k *.h5 runs
+│   └── processed/  preprocessed tensors: emittance_target_hifi.h5, flow_surrogate.h5 (+ *_norm.json)
+├── models/       surrogate checkpoints: emittance_target_hifi/, flow_surrogate/
+├── runs/         per-run RL outputs (compare_*, move_*, impact_eval, ...): policies,
+│                 learning_curve.csv, cfg.yaml, rollouts/, TensorBoard
+├── results/      cross-run aggregates: summary.csv, stats.json, compare.png, drift plots
+└── figures/      final plots / JSON / animations (impact_tracking_*, move_*, shape_demo, ...)
 ```
 
-> All of `archives/ processed/ trained/ logs/ figures/ workdir/` are
-> gitignored — they are large data/artifact dirs, not source.
+> All of `data/ models/ runs/ results/ figures/ workdir/` are gitignored — they
+> are large data/artifact dirs, not source. `data/archives` is a symlink to the
+> shared Impact-T sweep outputs (47 GB), so it is never duplicated.
 
 ---
 
@@ -100,7 +100,7 @@ The run convention is **not** a normal `pip install` — the package is used
 in-place via `PYTHONPATH`:
 
 ```bash
-cd /home/rwu4/photoinjector-rl/photoinjector-rl-clean
+cd /home/rwu4/photoinjector-rl/slac-photoinjector-rl
 PY=/home/rwu4/miniconda3/envs/slac-rl/bin/python
 export PYTHONPATH=$PWD/src
 # Impact-T runs also need the binary (auto-located from <conda>/bin, but explicit is safe):
@@ -108,14 +108,14 @@ export IMPACTT_BIN=/home/rwu4/miniconda3/envs/slac-rl/bin/ImpactTexe
 ```
 
 Then invoke entry points as modules, e.g.
-`$PY -m photoinjector_rl.flow_surrogate.train_shac ...`.
+`$PY -m photoinjector_rl.surrogates.flow.train_shac ...`.
 
 ---
 
 ## Key conventions
 
 * **The 11-D knob vector** (the single source of truth is
-  `emittance_target/__init__.py`: `SETTING_KEYS`, `SETTING_BOUNDS`,
+  `core/settings.py`: `SETTING_KEYS`, `SETTING_BOUNDS`,
   `N_INPUT=11`), all **min-max normalized to `[0,1]`** via `SETTING_BOUNDS`:
 
   | # | key | bounds | role |
@@ -146,8 +146,8 @@ Then invoke entry points as modules, e.g.
   * SHAC / BPTT (`diffrl`): `best_policy.pt` / `final_policy.pt` — the **actor weights + obs RunningMeanStd**, loaded by the `DiffRLAdapter`. (`best_policy.pt` is the recommended eval target; a late SHAC collapse can degrade the final.)
   * PPO (Stable-Baselines3): a `.zip` (`ppo_final.zip` / `eval/best_model.zip`), loaded by the `SB3Adapter`.
 
-* **Fidelities:** *lofi* = 2000 particles / 8³ mesh (`archives/train`, ~9 s/run);
-  *hifi* = 20000 / 32³ (`archives/train_hifi`, ~35 s/run). Both share the same
+* **Fidelities:** *lofi* = 2000 particles / 8³ mesh (`data/archives/train`, ~9 s/run);
+  *hifi* = 20000 / 32³ (`data/archives/train_hifi`, ~35 s/run). Both share the same
   11-D LHS design so artifacts are directly comparable.
 
 ---
@@ -176,55 +176,55 @@ archiving one `*.h5` per run.
 
 ```bash
 # scalar EmittanceMLP (hifi)
-$PY -m photoinjector_rl.emittance_target.preprocess \
-    --archives 'archives/train_hifi/*.h5' --out processed/emittance_target_hifi.h5
-$PY -m photoinjector_rl.emittance_target.train \
-    --processed processed/emittance_target_hifi.h5 \
-    --out-dir trained/emittance_target_hifi --devices 1
-# shipped: trained/emittance_target_hifi/...best-epoch=191-val_loss=0.0060.ckpt (R²=0.995, MAPE 2.7%)
+$PY -m photoinjector_rl.surrogates.mlp.preprocess \
+    --archives 'data/archives/train_hifi/*.h5' --out data/processed/emittance_target_hifi.h5
+$PY -m photoinjector_rl.surrogates.mlp.train \
+    --processed data/processed/emittance_target_hifi.h5 \
+    --out-dir models/emittance_target_hifi --devices 1
+# shipped: models/emittance_target_hifi/...best-epoch=191-val_loss=0.0060.ckpt (R²=0.995, MAPE 2.7%)
 
 # conditional flow (lofi: 1500 particles/run)
-$PY -m photoinjector_rl.flow_surrogate.preprocess \
-    --archives 'archives/train/*.h5' --out processed/flow_surrogate.h5 --target-particles 1500
-$PY -m photoinjector_rl.flow_surrogate.train \
-    --processed processed/flow_surrogate.h5 --out-dir trained/flow_surrogate --devices 1
-# shipped: trained/flow_surrogate/...best-epoch=493-val_loss=-0.9555.ckpt (emit_4d err ~5.4%)
+$PY -m photoinjector_rl.surrogates.flow.preprocess \
+    --archives 'data/archives/train/*.h5' --out data/processed/flow_surrogate.h5 --target-particles 1500
+$PY -m photoinjector_rl.surrogates.flow.train \
+    --processed data/processed/flow_surrogate.h5 --out-dir models/flow_surrogate --devices 1
+# shipped: models/flow_surrogate/...best-epoch=493-val_loss=-0.9555.ckpt (emit_4d err ~5.4%)
 ```
 
 ### 3. RL training on the surrogate
 
 ```bash
-# --- scalar-MLP emittance task (emittance_target) ---
-CKPT=trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt
-NORM=processed/emittance_target_hifi_norm.json
+# --- scalar-MLP emittance task (surrogates/mlp, LEGACY) ---
+CKPT=models/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt
+NORM=data/processed/emittance_target_hifi_norm.json
 
-$PY -m photoinjector_rl.emittance_target.train_ppo \
-    --ckpt $CKPT --norm-json $NORM --out-dir trained/ppo_emittance_target \
+$PY -m photoinjector_rl.surrogates.mlp.train_ppo \
+    --ckpt $CKPT --norm-json $NORM --out-dir runs/ppo_emittance_target \
     --total-timesteps 500000 --n-envs 16 --device cpu
-$PY -m photoinjector_rl.emittance_target.train_shac \
+$PY -m photoinjector_rl.surrogates.mlp.train_shac \
     --cfg configs/diff_rl/shac_photoinjector.yaml --ckpt $CKPT --norm-json $NORM \
-    --logdir logs/shac --device cuda:0
-$PY -m photoinjector_rl.emittance_target.train_bptt \
+    --logdir runs/shac --device cuda:0
+$PY -m photoinjector_rl.surrogates.mlp.train_bptt \
     --cfg configs/diff_rl/bptt_photoinjector.yaml --ckpt $CKPT --norm-json $NORM \
-    --logdir logs/bptt --device cuda:0
+    --logdir runs/bptt --device cuda:0
 # fast smoke of SHAC+BPTT: ./scripts/run_diff_smoke.sh --device cpu --epochs 10
 
-# --- conditional-flow task (flow_surrogate): any registry property ---
-FCKPT=trained/flow_surrogate/checkpoints/best-epoch=493-val_loss=-0.9555.ckpt
-FNORM=processed/flow_surrogate_norm.json
+# --- conditional-flow task (surrogates/flow): any registry property ---
+FCKPT=models/flow_surrogate/checkpoints/best-epoch=493-val_loss=-0.9555.ckpt
+FNORM=data/processed/flow_surrogate_norm.json
 
-$PY -m photoinjector_rl.flow_surrogate.train_shac \
+$PY -m photoinjector_rl.surrogates.flow.train_shac \
     --cfg configs/diff_rl/shac_flow.yaml --flow-ckpt $FCKPT --norm-json $FNORM \
-    --property norm_emit_4d --reward-mode minimize --logdir logs/shac_flow --device cuda:0
-$PY -m photoinjector_rl.flow_surrogate.train_bptt \
+    --property norm_emit_4d --reward-mode minimize --logdir runs/shac_flow --device cuda:0
+$PY -m photoinjector_rl.surrogates.flow.train_bptt \
     --cfg configs/diff_rl/bptt_flow.yaml --flow-ckpt $FCKPT --norm-json $FNORM \
-    --logdir logs/bptt_flow --device cuda:0
-$PY -m photoinjector_rl.flow_surrogate.train_ppo \
-    --flow-ckpt $FCKPT --norm-json $FNORM --out-dir logs/ppo_flow --total-timesteps 500000
+    --logdir runs/bptt_flow --device cuda:0
+$PY -m photoinjector_rl.surrogates.flow.train_ppo \
+    --flow-ckpt $FCKPT --norm-json $FNORM --out-dir runs/ppo_flow --total-timesteps 500000
 
-# head-to-head PPO/SHAC/BPTT on the flow (writes logs/compare_flow/, evals best_policy):
-$PY -m photoinjector_rl.flow_surrogate.compare_algos \
-    --flow-ckpt $FCKPT --norm-json $FNORM --out-dir logs/compare_flow \
+# head-to-head PPO/SHAC/BPTT on the flow (writes runs/compare_flow/, evals best_policy):
+$PY -m photoinjector_rl.surrogates.flow.compare_algos \
+    --flow-ckpt $FCKPT --norm-json $FNORM --out-dir runs/compare_flow \
     --algos ppo,shac,bptt --seeds 0,1,2 --budget 500000 --device cuda:0
 ```
 
@@ -237,20 +237,20 @@ and `sigma_x/y` are the most knob-controllable; `sigma_z` is context-dominated.
 
 ```bash
 # roll out PPO (.zip) + SHAC/BPTT (.pt) policies on the real simulator, paired stats:
-$PY -m photoinjector_rl.emittance_target.compare_n_impact \
-    --policy ppo=trained/ppo_emittance_target/eval/best_model.zip \
-    --policy shac=logs/shac/best_policy.pt \
-    --policy bptt=logs/bptt/best_policy.pt \
+$PY -m photoinjector_rl.surrogates.mlp.compare_n_impact \
+    --policy ppo=runs/ppo_surrogates/mlp/eval/best_model.zip \
+    --policy shac=runs/shac/best_policy.pt \
+    --policy bptt=runs/bptt/best_policy.pt \
     --impact-config configs/impact/ImpactT_config.yaml \
     --distgen-input configs/impact/distgen_template.yaml \
     --norm-json $NORM --seeds 0,1,2,3
 
-# single-policy version: emittance_target/compare_impact.py
-# best-per-algo from a compare_diff_algos run: emittance_target/compare_impact_all_algos.py
+# single-policy version: surrogates/mlp/compare_impact.py
+# best-per-algo from a compare_diff_algos run: surrogates/mlp/compare_impact_all_algos.py
 ```
 
 PPO can also be **fine-tuned on real Impact-T** by warm-starting the
-surrogate-trained policy: `emittance_target/train_ppo_impact.py`.
+surrogate-trained policy: `surrogates/mlp/train_ppo_impact.py`.
 
 ---
 
@@ -275,9 +275,9 @@ One-liners to reproduce the headline results:
 
 ```bash
 # surrogate-side tracking figure (loads best_policy.pt / ppo_final.zip per algo)
-$PY -m photoinjector_rl.flow_surrogate.eval_tracking \
+$PY -m photoinjector_rl.surrogates.flow.eval_tracking \
     --flow-ckpt $FCKPT --norm-json $FNORM \
-    --shac logs/move_shac/seed0 --bptt logs/move_bptt/seed0 --ppo logs/move_ppo \
+    --shac runs/move_shac/seed0 --bptt runs/move_bptt/seed0 --ppo runs/move_ppo \
     --traj-config configs/diff_rl/moving_eval.yaml --out figures/move_tracking.png
 
 # full REAL Impact-T eval matrix (3 models × 3 held-out schedules × {lofi,hifi}):
@@ -286,7 +286,7 @@ $PY -m photoinjector_rl.flow_surrogate.eval_tracking \
 
 (Train one with the `--moving-shape` flag on any flow driver, e.g.
 `train_shac --cfg configs/diff_rl/shac_flow.yaml --flow-ckpt $FCKPT --norm-json $FNORM
---moving-shape --logdir logs/move_shac`; the curriculum is configured in the
+--moving-shape --logdir runs/move_shac`; the curriculum is configured in the
 YAML `diff_env.curriculum` block.)
 
 ---
@@ -306,8 +306,9 @@ surrogates); regression tests that need a checkpoint skip if it is absent.
 
 | dir | contents |
 |---|---|
-| `archives/` | raw Impact-T sweep runs (`*.h5`, one per LHS point), per fidelity |
-| `processed/` | preprocessed training tensors + `*_norm.json` normalization stats |
-| `trained/` | surrogate checkpoints (`emittance_target_hifi/`, `flow_surrogate/`) + `final_metrics.json` + val plots |
-| `logs/` | RL run dirs — `best_policy.pt`/`final_policy.pt` or `ppo_final.zip`, `learning_curve.csv`, TensorBoard; compare/move/shape/impact_eval runs |
-| `figures/` | result plots, tracking JSON, summary CSVs, and GIF animations |
+| `data/archives/` | raw Impact-T sweep runs (`*.h5`, one per LHS point), per fidelity — **symlink** to the shared 47 GB store |
+| `data/processed/` | preprocessed training tensors + `*_norm.json` normalization stats |
+| `models/` | surrogate checkpoints (`emittance_target_hifi/`, `flow_surrogate/`) + `final_metrics.json` + val plots |
+| `runs/` | per-run RL outputs — `best_policy.pt`/`final_policy.pt` or `ppo_final.zip`, `learning_curve.csv`, `cfg.yaml`, `rollouts/`, TensorBoard; compare/move/impact_eval runs |
+| `results/` | cross-run aggregates — `summary.csv`, `stats.json`, `compare.png`, drift-sweep plots |
+| `figures/` | final plots, tracking JSON, summary CSVs, and GIF animations |

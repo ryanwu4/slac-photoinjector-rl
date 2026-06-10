@@ -12,12 +12,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from photoinjector_rl.emittance_target.callbacks import (
+from photoinjector_rl.core.callbacks import (
     EpisodeMetricsCallback,
     RolloutDiagnosticCallback,
     _is_saturated,
 )
-from photoinjector_rl.emittance_target.env import PhotoinjectorEnv
+from photoinjector_rl.surrogates.mlp.env import PhotoinjectorEnv
 
 
 class _ConstantSurrogate(nn.Module):
@@ -91,7 +91,7 @@ def test_diag_callback_multi_seed_runs_one_rollout_per_seed(tmp_path: Path) -> N
 def test_is_saturated_detects_bounds() -> None:
     """Helper used by EpisodeMetricsCallback to flag bound-pinning."""
     # Construct a knob vector pinned at lower bound of SOL10111.
-    from photoinjector_rl.emittance_target import SETTING_BOUNDS, SETTING_KEYS
+    from photoinjector_rl.surrogates.mlp import SETTING_BOUNDS, SETTING_KEYS
     lows = np.array([SETTING_BOUNDS[k][0] for k in SETTING_KEYS[:5]],
                     dtype=np.float32)
     highs = np.array([SETTING_BOUNDS[k][1] for k in SETTING_KEYS[:5]],
@@ -127,7 +127,7 @@ def test_episode_metrics_logs_on_episode_end() -> None:
     cb = EpisodeMetricsCallback()
     cb.model = _FakeModel(fake_logger)  # type: ignore[assignment]
 
-    from photoinjector_rl.emittance_target import SETTING_BOUNDS, SETTING_KEYS
+    from photoinjector_rl.surrogates.mlp import SETTING_BOUNDS, SETTING_KEYS
     mid_knobs = np.array(
         [(SETTING_BOUNDS[k][0] + SETTING_BOUNDS[k][1]) / 2
          for k in SETTING_KEYS[:5]],

@@ -12,8 +12,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from photoinjector_rl.flow_surrogate import COORD_KEYS, N_INPUT, SETTING_KEYS
-from photoinjector_rl.flow_surrogate.dataset import (
+from photoinjector_rl.surrogates.flow import COORD_KEYS, N_INPUT, SETTING_KEYS
+from photoinjector_rl.surrogates.flow.dataset import (
     _destandardize_particles,
     _standardize_particles,
 )

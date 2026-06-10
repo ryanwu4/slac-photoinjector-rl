@@ -2,11 +2,11 @@
 # Eval-only distgen-drift robustness sweep.
 #
 # Takes the CLEAN-trained (distgen_drift_std=0) PPO/SHAC/BPTT policies already
-# sitting in logs/compare_diff_hifi/ and re-evaluates them under several jitter
+# sitting in runs/compare_diff_hifi/ and re-evaluates them under several jitter
 # levels -- NO retraining. This is the test-time-robustness complement to
 # compare_hifi_drift.sh (which trains AND evals under drift).
 #
-# The drift=0.0 level reproduces logs/compare_diff_hifi/summary.csv (same eval
+# The drift=0.0 level reproduces runs/compare_diff_hifi/summary.csv (same eval
 # helpers), so it doubles as a sanity check. The source run dir is read-only;
 # all outputs land in --out-dir.
 #
@@ -22,8 +22,8 @@ set -euo pipefail
 # --- tunables (override via env or flags) ------------------------------------
 GPU="${GPU:-0}"
 DEVICE="${DEVICE:-}"
-RUNS_ROOT="${RUNS_ROOT:-logs/compare_diff_hifi}"
-OUT_DIR="${OUT_DIR:-logs/eval_drift_sweep}"
+RUNS_ROOT="${RUNS_ROOT:-runs/compare_diff_hifi}"
+OUT_DIR="${OUT_DIR:-results/eval_drift_sweep}"
 ALGOS="${ALGOS:-ppo,shac,bptt}"
 SEEDS="${SEEDS:-0,1,2}"
 EVAL_ROLLOUTS="${EVAL_ROLLOUTS:-256}"
@@ -38,8 +38,8 @@ Usage: scripts/eval_drift_sweep.sh [flags]
   --levels a,b,c       eval drift stds (overrides DRIFT_LEVELS; default 0.0,0.02,0.05,0.1)
   --gpu N              pin to physical GPU N (default 0)
   --device DEV         explicit torch device (cuda:0, cpu); skips the GPU pin
-  --runs-root DIR      trained-policy root (default logs/compare_diff_hifi)
-  --out-dir DIR        output dir (default logs/eval_drift_sweep)
+  --runs-root DIR      trained-policy root (default runs/compare_diff_hifi)
+  --out-dir DIR        output dir (default results/eval_drift_sweep)
   --algos a,b          subset of ppo,shac,bptt (default all three)
   --seeds a,b,c        comma-separated seeds (default 0,1,2)
   --eval-rollouts N    rollouts per (algo,seed,drift) (default 256)
@@ -75,10 +75,10 @@ if [[ -z "$DEVICE" ]]; then
     DEVICE="cuda:0"
 fi
 
-CKPT="$(ls -1 trained/emittance_target_hifi/checkpoints/best-*.ckpt 2>/dev/null | tail -1 || true)"
-NORM="processed/emittance_target_hifi_norm.json"
+CKPT="$(ls -1 models/emittance_target_hifi/checkpoints/best-*.ckpt 2>/dev/null | tail -1 || true)"
+NORM="data/processed/emittance_target_hifi_norm.json"
 if [[ -z "$CKPT" || ! -f "$CKPT" ]]; then
-    echo "[error] no hi-fi surrogate checkpoint under trained/emittance_target_hifi/checkpoints/" >&2
+    echo "[error] no hi-fi surrogate checkpoint under models/emittance_target_hifi/checkpoints/" >&2
     exit 1
 fi
 if [[ ! -d "$RUNS_ROOT" ]]; then
@@ -105,7 +105,7 @@ echo "   surrogate ckpt:  $CKPT"
 echo "   out dir:         $OUT_DIR"
 echo "=================================================================="
 
-"$PYTHON" -m photoinjector_rl.emittance_target.eval_drift_sweep \
+"$PYTHON" -m photoinjector_rl.surrogates.mlp.eval_drift_sweep \
     --ckpt "$CKPT" --norm-json "$NORM" \
     --runs-root "$RUNS_ROOT" --out-dir "$OUT_DIR" \
     --algos "$ALGOS" --seeds "$SEEDS" \

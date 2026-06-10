@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 import yaml
 
-from photoinjector_rl.emittance_target import compare_diff_algos as cda
+from photoinjector_rl.surrogates.mlp import compare_diff_algos as cda
 
 
 # ---- _max_epochs_for_budget -------------------------------------------------

@@ -19,9 +19,9 @@ dependencies = [
 
 [project.optional-dependencies]
 mpi = ["mpi4py>=4.1"]
-# Surrogate (scalar MLP + conditional affine-coupling flow) + RL stack.
+# Surrogate (conditional affine-coupling flow; legacy scalar MLP) + RL stack.
 # The affine flow needs no extra deps beyond torch.
-emittance-target = [
+surrogate = [
     "torch>=2.0",
     "lightning>=2.0",
     "matplotlib>=3.7",

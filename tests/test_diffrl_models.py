@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from photoinjector_rl.emittance_target.diffrl.models import (
+from photoinjector_rl.diffrl.models import (
     ActorStochasticMLP,
     CriticMLP,
 )

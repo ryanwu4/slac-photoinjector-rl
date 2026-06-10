@@ -3,7 +3,7 @@
 #
 # This is the drift variant of the static "next step" comparison printed by
 # regen_hifi.sh. It runs the exact same head-to-head against the hi-fi
-# EmittanceMLP surrogate (trained/emittance_target_hifi), but turns on a
+# EmittanceMLP surrogate (models/emittance_target_hifi), but turns on a
 # per-step Gaussian random walk on the hidden 6-D distgen context to model
 # cathode shot-to-shot jitter.
 #
@@ -14,7 +14,7 @@
 # self-describing: stats.json["_config"]["distgen_drift_std"] records what ran.
 #
 # Output goes to a drift-tagged dir so the static baseline in
-# logs/compare_diff_hifi/ is left untouched. Re-running resumes: any
+# runs/compare_diff_hifi/ is left untouched. Re-running resumes: any
 # (algo, seed) whose run dir already has a .done marker is skipped.
 #
 # ==========================================================================
@@ -50,7 +50,7 @@ Usage: scripts/compare_hifi_drift.sh [flags]
   --seeds a,b,c        comma-separated seeds (default 0,1,2)
   --algos a,b          subset of ppo,shac,bptt (default all three)
   --eval-rollouts N    deterministic eval rollouts per run (default 256)
-  --out-dir DIR        output dir (default logs/compare_diff_hifi_drift<DRIFT>)
+  --out-dir DIR        output dir (default runs/compare_diff_hifi_drift<DRIFT>)
   --skip-train         aggregate existing runs only (no subprocess training)
   -h | --help          this message
 EOF
@@ -83,7 +83,7 @@ PYTHON="${PYTHON:-/home/rwu4/miniconda3/envs/slac-rl/bin/python}"
 
 # Default out-dir embeds the drift value so a sweep doesn't collide.
 if [[ -z "$OUT_DIR" ]]; then
-    OUT_DIR="logs/compare_diff_hifi_drift${DISTGEN_DRIFT_STD}"
+    OUT_DIR="runs/compare_diff_hifi_drift${DISTGEN_DRIFT_STD}"
 fi
 
 # Pin one physical GPU unless an explicit --device was given.
@@ -93,12 +93,12 @@ if [[ -z "$DEVICE" ]]; then
 fi
 
 # --- locate surrogate artifacts ----------------------------------------------
-CKPT="$(ls -1 trained/emittance_target_hifi/checkpoints/best-*.ckpt 2>/dev/null | tail -1 || true)"
-NORM="processed/emittance_target_hifi_norm.json"
+CKPT="$(ls -1 models/emittance_target_hifi/checkpoints/best-*.ckpt 2>/dev/null | tail -1 || true)"
+NORM="data/processed/emittance_target_hifi_norm.json"
 
 if [[ -z "$CKPT" || ! -f "$CKPT" ]]; then
     echo "[error] no hi-fi surrogate checkpoint under" \
-         "trained/emittance_target_hifi/checkpoints/best-*.ckpt" >&2
+         "models/emittance_target_hifi/checkpoints/best-*.ckpt" >&2
     echo "        run scripts/regen_hifi.sh first." >&2
     exit 1
 fi
@@ -129,7 +129,7 @@ echo "   out dir:         $OUT_DIR"
 echo "   PYTHONPATH:      $PYTHONPATH"
 echo "=================================================================="
 
-CMD=( "$PYTHON" -m photoinjector_rl.emittance_target.compare_diff_algos
+CMD=( "$PYTHON" -m photoinjector_rl.surrogates.mlp.compare_diff_algos
       --ckpt "$CKPT"
       --norm-json "$NORM"
       --out-dir "$OUT_DIR"

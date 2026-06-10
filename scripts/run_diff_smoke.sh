@@ -21,7 +21,7 @@ DEVICE=""
 EPOCHS=10
 SEED=0
 ALGO=both          # shac | bptt | both
-LOGROOT=logs
+LOGROOT=runs
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -40,8 +40,8 @@ done
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-CKPT="trained/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt"
-NORM="processed/emittance_target_hifi_norm.json"
+CKPT="models/emittance_target_hifi/checkpoints/best-epoch=191-val_loss=0.0060.ckpt"
+NORM="data/processed/emittance_target_hifi_norm.json"
 PYTHON="${PYTHON:-/home/rwu4/miniconda3/envs/slac-rl/bin/python}"
 
 # Pin to one physical GPU. CUDA_VISIBLE_DEVICES makes torch see only that
@@ -72,7 +72,7 @@ fi
 run_shac() {
     local logdir="$LOGROOT/shac_smoke_seed${SEED}"
     echo ">>> SHAC -> $logdir"
-    "$PYTHON" -m photoinjector_rl.emittance_target.train_shac \
+    "$PYTHON" -m photoinjector_rl.surrogates.mlp.train_shac \
         --cfg configs/diff_rl/shac_photoinjector.yaml \
         --ckpt "$CKPT" --norm-json "$NORM" \
         --logdir "$logdir" --seed "$SEED" \
@@ -82,7 +82,7 @@ run_shac() {
 run_bptt() {
     local logdir="$LOGROOT/bptt_smoke_seed${SEED}"
     echo ">>> BPTT -> $logdir"
-    "$PYTHON" -m photoinjector_rl.emittance_target.train_bptt \
+    "$PYTHON" -m photoinjector_rl.surrogates.mlp.train_bptt \
         --cfg configs/diff_rl/bptt_photoinjector.yaml \
         --ckpt "$CKPT" --norm-json "$NORM" \
         --logdir "$logdir" --seed "$SEED" \
