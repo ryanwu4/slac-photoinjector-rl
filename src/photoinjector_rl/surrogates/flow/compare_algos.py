@@ -161,8 +161,30 @@ def _rollout_terminal(env, ep_len: int, action_fn) -> np.ndarray:
         return env.physical_emit(terminal_y).cpu().numpy()
 
 
+def _register_legacy_diffrl_aliases() -> None:
+    """Older policy checkpoints were pickled when the diffrl code lived under
+    ``photoinjector_rl.emittance_target.diffrl`` (since reorganized to
+    ``photoinjector_rl.diffrl``). Alias the old dotted paths in ``sys.modules``
+    so ``torch.load`` can resolve ActorStochasticMLP/CriticMLP/RunningMeanStd."""
+    import sys
+    import types
+
+    import photoinjector_rl.diffrl as _diffrl
+    import photoinjector_rl.diffrl.models as _models
+    import photoinjector_rl.diffrl.utils as _utils
+
+    pkg = sys.modules.setdefault(
+        "photoinjector_rl.emittance_target",
+        types.ModuleType("photoinjector_rl.emittance_target"))
+    sys.modules.setdefault("photoinjector_rl.emittance_target.diffrl", _diffrl)
+    sys.modules.setdefault("photoinjector_rl.emittance_target.diffrl.models", _models)
+    sys.modules.setdefault("photoinjector_rl.emittance_target.diffrl.utils", _utils)
+    pkg.diffrl = _diffrl  # so the import machinery sees the child attribute
+
+
 def _load_diffrl_actor(policy_pt: Path, device: str):
     from photoinjector_rl.diffrl.utils import RunningMeanStd
+    _register_legacy_diffrl_aliases()
     ckpt = torch.load(str(policy_pt), weights_only=False, map_location=device)
     actor = ckpt[0].to(device).eval()
     obs_rms = next((x for x in ckpt if isinstance(x, RunningMeanStd)), None)
